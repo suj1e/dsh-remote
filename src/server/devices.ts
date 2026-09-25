@@ -116,7 +116,14 @@ export class DeviceStore {
   authenticate(token: string | undefined): DeviceRecord | undefined {
     if (!token) return undefined
     const record = this.byToken.get(hashToken(token))
-    if (record) record.lastSeenAt = Date.now()
+    if (record) {
+      const now = Date.now()
+      const crossedMinute = now - record.lastSeenAt > 60_000
+      record.lastSeenAt = now
+      // Persist liveness at most once a minute so the roster's last-seen
+      // column survives restarts without a disk write on every request.
+      if (crossedMinute && this.loaded) this.save()
+    }
     return record
   }
 

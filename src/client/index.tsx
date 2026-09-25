@@ -126,7 +126,7 @@ function useAdminState(enabled: boolean, port: number): { state?: AdminState; un
     return () => clearInterval(timer)
   }, [enabled, refresh])
 
-  return { state, unreachable }
+  return { state, unreachable, refresh }
 }
 
 async function adminAction(port: number, path: string, body?: unknown): Promise<void> {
@@ -154,7 +154,7 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   const ready = snap.status === 'ready' && config !== undefined
   const enabled = ready && config.enabled !== false
   const port = fallbackPort
-  const { state, unreachable } = useAdminState(enabled, port)
+  const { state, unreachable, refresh } = useAdminState(enabled, port)
 
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -173,7 +173,9 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   const [actionError, setActionError] = useState<string | undefined>(undefined)
   const runAction = (path: string, body?: unknown): void => {
     setActionError(undefined)
-    adminAction(port, path, body).catch((error: Error) => setActionError(error.message))
+    adminAction(port, path, body)
+      .then(() => refresh())
+      .catch((error: Error) => setActionError(error.message))
   }
 
   return (

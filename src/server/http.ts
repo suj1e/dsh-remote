@@ -10,7 +10,7 @@ import { PhoneSocket } from './ws.ts'
 import type { Config } from '../config.ts'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
-const PLUGIN_VERSION = '0.1.5'
+const PLUGIN_VERSION = '0.1.6'
 const ENTRY_ID = 'dsh-remote'
 
 /**
@@ -54,17 +54,31 @@ export interface ListenInfo {
   addresses: string[]
 }
 
-/** LAN-reachable private IPv4 addresses of this host (best effort). */
+/**
+ * LAN-reachable private IPv4 addresses of this host (best effort), ordered by
+ * likely phone reachability: home/office 192.168 first, then 10.x, then
+ * 172.16–31, then anything else (VPN TUN ranges like 198.18.x sort last so
+ * the QR code does not encode a tunnel address when a real LAN exists).
+ */
 export function lanAddresses(): string[] {
-  const result: string[] = []
-  for (const entries of Object.values(os.networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (entry.family !== 'IPv4' || entry.internal) continue
-      if (entry.address.startsWith('127.') || entry.address.startsWith('169.254.')) continue
-      result.push(entry.address)
+  const collect = (accept: (address: string) => boolean): string[] => {
+    const result: string[] = []
+    for (const entries of Object.values(os.networkInterfaces())) {
+      for (const entry of entries ?? []) {
+        if (entry.family !== 'IPv4' || entry.internal) continue
+        if (entry.address.startsWith('127.') || entry.address.startsWith('169.254.')) continue
+        if (accept(entry.address)) result.push(entry.address)
+      }
     }
+    return result
   }
-  return result
+  const firstOctet = (address: string): number => Number(address.split('.')[0])
+  return [
+    ...collect((a) => a.startsWith('192.168.')),
+    ...collect((a) => a.startsWith('10.')),
+    ...collect((a) => firstOctet(a) === 172 && Number(a.split('.')[1]) >= 16 && Number(a.split('.')[1]) <= 31),
+    ...collect((a) => !a.startsWith('192.168.') && !a.startsWith('10.') && firstOctet(a) !== 172),
+  ]
 }
 
 function json(res: ServerResponse, status: number, value: unknown, headers: Record<string, string> = {}): void {
@@ -256,10 +270,18 @@ export class RemoteServer {
       if (typeof body.deviceId !== 'string' || !this.options.store.revoke(body.deviceId)) {
         return json(res, 404, { error: 'admin/unknown-device' }, cors)
       }
+      this.killDeviceSockets(body.deviceId)
       this.options.log?.(`device revoked: ${body.deviceId}`)
       return json(res, 200, { ok: true }, cors)
     }
     return json(res, 404, { error: 'not-found' }, cors)
+  }
+
+  /** Disconnect every live connection that spoke for a revoked device. */
+  private killDeviceSockets(deviceId: string): void {
+    for (const socket of this.sockets) {
+      if (socket.deviceId === deviceId) socket.dispose()
+    }
   }
 
   private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -280,6 +302,7 @@ export class RemoteServer {
         allowedEndpoints: this.options.config.allowedEndpoints,
         peer: this.options.gateway.operatorPeer(),
         hello: { ...this.info(), device: { id: device.id, name: device.name } },
+        deviceId: device.id,
         log: this.options.log,
       })
       this.sockets.add(phone)

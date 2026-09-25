@@ -76,12 +76,13 @@ async function startHarness(): Promise<Harness> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code: store.pairingCode, deviceName: 'test-phone' }),
-  }).then((r) => r.json() as Promise<{ deviceToken: string }>)
+  }).then((r) => r.json() as Promise<{ deviceId: string; deviceToken: string }>)
 
   return {
     server,
     gateway,
     url,
+    deviceId: pair.deviceId,
     token: pair.deviceToken,
     code: store.pairingCode,
     close: async () => {
@@ -176,6 +177,36 @@ test('websocket rejects unauthenticated upgrades', async () => {
       ws.on('error', () => resolve('error'))
     })
     assert.equal(result, 'error')
+  } finally {
+    await h.close()
+  }
+})
+
+test('revoking a device disconnects its live sockets', async () => {
+  const h = await startHarness()
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${new URL(h.url).port}/v1/ws`, {
+      headers: { authorization: `Bearer ${h.token}` },
+    })
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => resolve())
+    })
+    const closed = new Promise<number>((resolve) => {
+      ws.on('close', (code) => resolve(code))
+    })
+
+    const response = await fetch(`${h.url}/v1/admin/revoke`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:19387' },
+      body: JSON.stringify({ deviceId: h.deviceId }),
+    })
+    assert.equal(response.status, 200)
+
+    // The socket must be closed by the server, not left lingering.
+    assert.equal(await closed, 1008)
+    // And the token no longer authenticates.
+    const denied = await fetch(`${h.url}/v1/info`, { headers: { authorization: `Bearer ${h.token}` } })
+    assert.equal(denied.status, 401)
   } finally {
     await h.close()
   }

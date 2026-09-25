@@ -78,16 +78,15 @@ pnpm test        # node:test：配对/鉴权/白名单/WS 帧代理/桩网关端
 源码结构：
 
 ```
-src/index.ts            Host 插件入口（inject typertGateway，拉起服务器）
-src/config.ts           Schemastery 配置
+src/index.ts            Host 插件入口（volatile enabled 实时启停监听）
+src/config.ts           Schemastery 配置（enabled 为 volatile 字段）
 src/server/devices.ts   设备注册表 + 配对码（$DSH_HOME/mobile-remote/）
 src/server/auth.ts      Bearer 解析、回环判定、配对限速
-src/server/http.ts      HTTP 服务器：配对页 / REST / 管理动作 / WS 升级
+src/server/http.ts      HTTP 服务器：CORS 管理区 / REST / WS 升级 / 吊销断连
 src/server/rpc.ts       dispatchRpc 代理 + 端点白名单
-src/server/ws.ts        WS 逻辑流多路复用（stream-protocol 帧格式）
+src/server/ws.ts        WS 逻辑流多路复用（stream-protocol 帧格式 + 心跳）
 src/server/events.ts    api-session/* 事件 → notify 推送
-src/server/pair-page.ts 自托管配对页（QR 由 qrcode 生成）
-src/client/index.tsx    浏览器半边：设置页 + 侧栏入口
+src/client/index.tsx    浏览器半边：设置页（开关 + 二维码 + 设备管理）
 ```
 
 架构要点：一元调用走 `ctx.typertGateway.dispatchRpc`，流走 `ctx.typertGateway.wireStream.open`，帧校验复用 `@deepseek-ai/dsh-api-gateway/stream-protocol`——即手机端与桌面浏览器消费**同一条**类型化调用链（严格描述符、参数校验、agent 解析全部由网关完成）。

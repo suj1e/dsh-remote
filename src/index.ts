@@ -66,6 +66,9 @@ function dshRemote(ctx: Context, config: ConfigType): void {
     void instance.close().then(() => {
       closing = false
       log('server closed (remote connections off)')
+      // A toggle back on during the close window dropped its start event;
+      // re-check once the listener is actually free.
+      if (enabledNow() && !server) start()
     })
   }
 

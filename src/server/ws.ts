@@ -57,6 +57,8 @@ export interface PhoneSocketOptions {
   allowedEndpoints: readonly string[]
   peer: unknown
   hello: Record<string, unknown>
+  /** Paired device this socket speaks for; targeted disconnection on revoke. */
+  deviceId: string
   log?: (message: string) => void
 }
 
@@ -69,6 +71,7 @@ export class PhoneSocket {
   private options: PhoneSocketOptions
   private streams = new Map<string, LiveStream>()
   private heartbeat?: ReturnType<typeof setInterval>
+  private alive = true
   private closed = false
 
   private constructor(ws: WebSocket, options: PhoneSocketOptions) {
@@ -76,15 +79,30 @@ export class PhoneSocket {
     this.options = options
   }
 
+  /** Paired device id this connection was admitted for. */
+  get deviceId(): string {
+    return this.options.deviceId
+  }
+
   static attach(ws: WebSocket, options: PhoneSocketOptions): PhoneSocket {
     const socket = new PhoneSocket(ws, options)
     ws.on('message', (data) => void socket.onMessage(String(data)))
     ws.on('close', () => socket.dispose())
     ws.on('error', () => socket.dispose())
+    ws.on('pong', () => {
+      socket.alive = true
+    })
     socket.heartbeat = setInterval(() => {
-      if (ws.readyState === ws.OPEN) {
-        ws.ping()
+      if (ws.readyState !== ws.OPEN) return
+      // Terminate peers that never answered the previous ping; the protocol
+      // layer answers Pong automatically, so silence means a dead network path.
+      if (!socket.alive) {
+        ws.terminate()
+        socket.dispose()
+        return
       }
+      socket.alive = false
+      ws.ping()
     }, HEARTBEAT_INTERVAL_MS)
     wsSend(ws, { type: 'hello', ...options.hello })
     return socket
@@ -104,6 +122,9 @@ export class PhoneSocket {
       stream.uplink.abort()
     }
     this.streams.clear()
+    // External callers (revocation, server shutdown) dispose directly, so the
+    // socket itself must go too; self-close on the ws 'close' event is a no-op.
+    if (this.ws.readyState === this.ws.OPEN) this.ws.close(1008, 'device revoked')
   }
 
   private async onMessage(text: string): Promise<void> {
