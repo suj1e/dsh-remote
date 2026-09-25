@@ -9,6 +9,9 @@ export default defineConfig([
     target: 'node24',
     dts: { sorted: true },
     unbundle: false,
+    // package.json exports stay hand-maintained (tsdown's generator rewrites
+    // them with hashed artifact names).
+    exports: false,
   },
   {
     entry: ['src/client/index.tsx'],
@@ -18,6 +21,7 @@ export default defineConfig([
     target: 'es2022',
     dts: false,
     unbundle: false,
+    exports: false,
     external: ['react', 'react/jsx-runtime'],
   },
 ])

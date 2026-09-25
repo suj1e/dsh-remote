@@ -30,9 +30,6 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: 0.1.7-rc.2
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
-      '@rolldown/binding-darwin-arm64':
-        specifier: 1.2.10
-        version: 1.2.10
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.6
@@ -681,7 +678,8 @@ snapshots:
   '@rolldown/binding-android-arm64@1.2.10':
     optional: true
 
-  '@rolldown/binding-darwin-arm64@1.2.10': {}
+  '@rolldown/binding-darwin-arm64@1.2.10':
+    optional: true
 
   '@rolldown/binding-darwin-x64@1.2.10':
     optional: true

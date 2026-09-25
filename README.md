@@ -17,13 +17,35 @@ DSH 插件（Cordis bundle），在 Host 进程内开启一个独立的 HTTP+Web
 要求 DSH ≥ 0.1.7-rc.2（peer 版本精确对齐，安装器会校验）。
 
 ```bash
+# 从 npm 安装（推荐）
+dsh plugin install @suj1e/dsh-remote
+# 或在 Web GUI：设置 → 插件 → 安装外部插件，填包名
+
 # 本地路径安装（开发）
 dsh plugin install /path/to/dsh-remote
-# 或在 Web GUI：设置 → 插件 → 安装外部插件，填本地路径
-# 或发布到 npm/git 后按包名安装
 ```
 
 > **首次安装后需重启一次 DSH**：client 半边（设置页/侧栏按钮）的包元数据在进程内有缓存；重启后即出现。
+
+## 发布（CI 流水线）
+
+GitHub Actions 两条流水线：
+
+- **CI**（`.github/workflows/ci.yml`）：push/PR 时在 ubuntu + macOS 上 install → build → test → `npm pack --dry-run` 校验产物
+- **Release**（`.github/workflows/release.yml`）：推送 `v*` tag 时校验 tag 与 package.json 版本一致 → 测试 → 构建 → `npm publish --access public --provenance`
+
+发布步骤：
+
+```bash
+# 一次性准备
+# 1. npmjs.com 确认账号（scope 必须与 npm 用户名一致，即 @suj1e）
+# 2. 生成 Automation 类型的 Access Token，配置到仓库 Settings → Secrets → NPM_TOKEN
+
+# 每次发版
+npm version patch   # 或 minor / major
+git push --follow-tags
+# CI 自动发布，DSH 侧更新：dsh plugin install @suj1e/dsh-remote
+```
 
 ## 配置
 
