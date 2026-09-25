@@ -157,7 +157,31 @@ POST /v1/rpc
 - `$events` 流断开即作废（`clientId` 失效），重连后重新 open 获取新 `clientId`。
 - 令牌被吊销：WS 升级被拒、REST 返回 401，App 应引导重新配对。
 
-## 6. 错误码总表
+## 6. 多主机管理（App 端客户端模型）
+
+协议本身无多主机概念——**每台 Mac 是一个独立服务器**，App 端维护一份服务器档案列表即可，互不干扰。推荐的客户端模型：
+
+```swift
+struct ServerProfile: Codable, Identifiable {
+    let id: UUID                 // 本地生成
+    var name: String             // 默认取 /v1/info 的 host.name，允许用户改名
+    var host: String             // IP 或主机名（不含 scheme）
+    var port: Int
+    var token: String            // deviceToken，存 Keychain 而非 UserDefaults
+    var deviceId: String         // 配对响应的 deviceId
+    var pairedAt: Date
+}
+```
+
+要点：
+
+- **添加**：扫码（深链 `dsh-remote://pair?host=&port=&code=`）或手输 `host:port` + 配对码 → `POST /v1/pair` → 落档案。配对响应里的 `host.name`（如 `MacBook-Pro-2.local`）作默认显示名。
+- **健康检查**：进入列表/切换时对各档案并发 `GET /v1/info`（超时 2–3s），绿灯=在线、红=不可达、401=令牌失效（提示重新配对）。
+- **连接策略**：同一时刻一个「当前主机」；切换档案即换 baseUrl + token 重建 WS。也可对多主机并行保活 WS（每档案一条连接，互不冲突——插件侧按设备令牌独立鉴权）。
+- **同一主机多设备**：每台 iPhone 各自配对，即各自持有独立 deviceToken（桌面配对页的「已配对设备」列表会显示全部）。App 换机/重装后重新配对一次即可，旧档案在桌面配对页吊销。
+- **删除档案**：纯本地操作（可选先吊销：桌面配对页管理；协议 v1 未提供手机端吊销其它设备的端点）。
+
+## 7. 错误码总表
 
 | code | 层 | 含义 |
 |---|---|---|

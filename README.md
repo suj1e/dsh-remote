@@ -10,6 +10,7 @@ DSH 插件（Cordis bundle），在 Host 进程内开启一个独立的 HTTP+Web
 - **会话**：列表实时增删/状态推送（`api-session/*` 事件）、实时消息流（`session/follow`）、发送消息（`session/prompt`，幂等）、取消（`session/cancel`）
 - **审批**：`$events` 流转发审批与用户提问（waterfall），手机作答经 `$events/result` 回传，与桌面端先答先得
 - **桌面 GUI 入口**（client 半边）：设置页「手机远程」+ 侧栏快捷按钮，一键打开本地配对页
+- **多主机**：App 端按档案管理多台 Mac（每台一份地址+令牌），纯客户端能力，协议无需扩展（客户端模型见 PROTOCOL.md §6）
 
 ## 安装
 
