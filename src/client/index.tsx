@@ -28,6 +28,7 @@ const locale: Locale = {
     'allow': '允许远程连接',
     'allow.hint': '关闭后立即停止监听并断开已连接的手机；重新开启后恢复。',
     'status.loading': '正在读取配置…',
+    'status.unavailable': '配置表单不可用（需要重启 DSH 使插件配置生效后重试）。',
     'status.unwritable': '当前页面无法修改配置（仅本机页面可写）。',
     'write.failed': '配置写入失败，请重试。',
     'qr.title': '扫码配对',
@@ -48,6 +49,7 @@ const locale: Locale = {
     'allow': 'Allow remote connections',
     'allow.hint': 'Turning this off stops the listener and disconnects phones; turn it back on to resume.',
     'status.loading': 'Loading configuration…',
+    'status.unavailable': 'The config form is unavailable (restart DSH so the plugin config registers, then retry).',
     'status.unwritable': 'This page cannot edit configuration (local pages only).',
     'write.failed': 'Failed to write configuration, please retry.',
     'qr.title': 'Pair by QR',
@@ -146,10 +148,12 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   const [snap, setSnap] = useState(() => form.getSnapshot())
   useEffect(() => form.subscribe(() => setSnap(form.getSnapshot())), [form])
 
-  const config = snap.value as { enabled?: boolean; port?: number } | undefined
-  const loaded = snap.status !== 'loading'
-  const enabled = loaded && config?.enabled !== false
-  const port = typeof config?.port === 'number' && config.port > 0 ? config.port : fallbackPort
+  // The form carries only volatile fields — `enabled` here. `port` is not
+  // editable through it and always comes from the entry config fallback.
+  const config = snap.value as { enabled?: boolean } | undefined
+  const ready = snap.status === 'ready' && config !== undefined
+  const enabled = ready && config.enabled !== false
+  const port = fallbackPort
   const { state, unreachable } = useAdminState(enabled, port)
 
   const [busy, setBusy] = useState(false)
@@ -174,8 +178,10 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
 
   return (
     <div className="dshr-section">
-      {!loaded ? (
+      {snap.status === 'loading' ? (
         <div className="dshr-text">{t('status.loading')}</div>
+      ) : !ready ? (
+        <div className="dshr-text">{t('status.unavailable')}</div>
       ) : !snap.writable ? (
         <div className="dshr-text">{t('status.unwritable')}</div>
       ) : (
