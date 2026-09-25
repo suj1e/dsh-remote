@@ -307,6 +307,34 @@ interface ClientContext {
 }
 
 /**
+ * Phone glyph for the settings-nav cell. The shell's navIcon map is hardcoded
+ * to five official section ids and falls back to a gear for everything else,
+ * so a third-party section can only restyle its own cell at runtime: find the
+ * nav button whose label matches and swap the icon wrapper's contents. The
+ * css-module hashes change per build, but the local class names (navCell,
+ * navLabel, navIcon) survive, so substring selectors stay stable. If the
+ * markup ever changes, this silently no-ops and the gear returns.
+ */
+const NAV_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="1.5" width="7" height="13" rx="1.8"/><path d="M7 11.8h2"/></svg>'
+
+function patchNavIcon(label: string): () => void {
+  if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return () => {}
+  const apply = (): void => {
+    for (const cell of Array.from(document.querySelectorAll('button[class*="navCell"]'))) {
+      const labelEl = cell.querySelector('[class*="navLabel"]')
+      if (!labelEl || labelEl.textContent !== label) continue
+      const icon = cell.querySelector('[class*="navIcon"]')
+      if (icon && icon.innerHTML !== NAV_ICON_SVG) icon.innerHTML = NAV_ICON_SVG
+    }
+  }
+  const observer = new MutationObserver(apply)
+  observer.observe(document.body, { childList: true, subtree: true })
+  apply()
+  return () => observer.disconnect()
+}
+
+/**
  * Browser half of dsh-remote: one Settings page owning the whole surface —
  * the allow-remote toggle (a primitives Switch over the native plugin config
  * form, so flipping it stops/starts the server via a fiber remount) plus the
@@ -318,6 +346,7 @@ export function apply(ctx: ClientContext, config: ClientConfig = {}): void {
   injectCss()
   ctx.effect(() => ctx.locale.register(NS, locale))
   const t = ctx.locale.bind(NS)
+  ctx.effect(() => patchNavIcon(t('nav')))
   const form = ctx.configForms.get(ENTRY_ID)
   // One stable props object: a fresh literal per inject() call remounts the
   // occupant on every host-page render and eats interaction state.
