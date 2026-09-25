@@ -1,6 +1,6 @@
 {
   "name": "@suj1e/dsh-remote",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Mobile remote access for DeepSeek Harness: LAN HTTP+WebSocket bridge for a paired iOS client",
   "type": "module",
   "main": "./lib/index.js",
