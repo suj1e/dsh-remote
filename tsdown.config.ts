@@ -22,6 +22,11 @@ export default defineConfig([
     dts: false,
     unbundle: false,
     exports: false,
-    external: ['react', 'react/jsx-runtime'],
+    external: [
+      'react',
+      'react/jsx-runtime',
+      // Static baseline module (seeded table in the browser shell).
+      '@deepseek-ai/dsh-client-ui-primitives',
+    ],
   },
 ])

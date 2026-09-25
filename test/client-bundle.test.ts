@@ -20,8 +20,9 @@ test('client bundle materializes in a bare realm', { skip: !existsSync('lib/clie
         load(message: { id: string; factory: (require: (id: string) => unknown) => unknown }) {
           assert.equal(message.id, '@suj1e/dsh-remote', 'bundle id follows package.json name')
           const stubs: Record<string, unknown> = {
-            react: { useState: () => [undefined, () => {}], useEffect: () => {} },
+            react: { useState: () => [undefined, () => {}], useEffect: () => {}, useCallback: () => () => {} },
             'react/jsx-runtime': { jsx: () => null, jsxs: () => null, Fragment: 'fragment' },
+            '@deepseek-ai/dsh-client-ui-primitives': { Button: () => null, Switch: () => null },
           }
           captured = message.factory((id: string) => stubs[id] ?? (() => null))
         },

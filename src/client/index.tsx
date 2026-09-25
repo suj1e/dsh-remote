@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
+import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 
 const NS = 'dshRemote'
 const ENTRY_ID = 'dsh-remote'
@@ -28,6 +29,7 @@ const locale: Locale = {
     'allow.hint': '关闭后立即停止监听并断开已连接的手机；重新开启后恢复。',
     'status.loading': '正在读取配置…',
     'status.unwritable': '当前页面无法修改配置（仅本机页面可写）。',
+    'write.failed': '配置写入失败，请重试。',
     'qr.title': '扫码配对',
     'qr.unreachable': '服务已开启但暂时不可达（可能端口被占用或正在重启）。',
     'qr.code': '配对码',
@@ -47,6 +49,7 @@ const locale: Locale = {
     'allow.hint': 'Turning this off stops the listener and disconnects phones; turn it back on to resume.',
     'status.loading': 'Loading configuration…',
     'status.unwritable': 'This page cannot edit configuration (local pages only).',
+    'write.failed': 'Failed to write configuration, please retry.',
     'qr.title': 'Pair by QR',
     'qr.unreachable': 'The server is enabled but unreachable (port busy or restarting).',
     'qr.code': 'Pairing code',
@@ -59,6 +62,35 @@ const locale: Locale = {
     'devices.revoke': 'Revoke',
     'devices.empty': 'No devices yet — scan the QR above from the app',
   },
+}
+
+/* Plugin-scoped styles over --dsw-* design tokens; injected once at
+ * materialization, exactly like a compiled css-module side effect. */
+const CSS = `
+.dshr-row{border-bottom:.5px solid var(--dsw-alias-border-l);justify-content:space-between;align-items:center;gap:24px;padding:16px 0;display:flex}
+.dshr-title{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.dshr-description{color:var(--dsw-alias-label-secondary);margin-top:4px;font-size:12px;line-height:18px}
+.dshr-alert{color:var(--dsw-alias-state-error-primary);margin-top:4px;font-size:12px;line-height:18px}
+.dshr-section{margin-top:20px;display:grid;gap:12px}
+.dshr-qr{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.dshr-qr-box{width:200px;height:200px;background:#fff;border-radius:10px;padding:8px;flex:none}
+.dshr-meta{display:grid;gap:8px;min-width:0}
+.dshr-code{font-size:26px;letter-spacing:8px;font-weight:600;font-variant-numeric:tabular-nums}
+.dshr-muted{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.dshr-table{border-collapse:collapse;width:100%}
+.dshr-table th{color:var(--dsw-alias-label-secondary);font-weight:500;text-align:left;padding:6px 12px 6px 0;font-size:12px}
+.dshr-table td{border-top:.5px solid var(--dsw-alias-border-l);padding:8px 12px 8px 0;font-size:13px;vertical-align:middle}
+`
+
+function injectCss(): void {
+  if (typeof document === 'undefined') return
+  const tagId = '@suj1e/dsh-remote/client.css'
+  if (document.querySelector(`style[data-plugin-css=${JSON.stringify(tagId)}]`) !== null) return
+  const tag = document.createElement('style')
+  tag.dataset.plugin = '@suj1e/dsh-remote'
+  tag.dataset.pluginCss = tagId
+  tag.textContent = CSS
+  document.head.appendChild(tag)
 }
 
 interface AdminState {
@@ -98,40 +130,21 @@ function useAdminState(enabled: boolean, port: number): { state?: AdminState; un
 }
 
 async function adminAction(port: number, path: string, body?: unknown): Promise<void> {
-  await fetch(`http://127.0.0.1:${port}${path}`, {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),
-  }).then((response) => {
-    if (!response.ok) throw new Error(`${path}: ${response.status}`)
   })
+  if (!response.ok) throw new Error(`${path}: ${response.status}`)
 }
 
-function Toggle({ on, disabled, label, hint, onChange }: {
-  on: boolean
-  disabled?: boolean
-  label: string
-  hint?: string
-  onChange: (next: boolean) => void
-}): ReactElement {
-  return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: disabled ? 'default' : 'pointer' }}>
-        <input
-          type="checkbox"
-          role="switch"
-          checked={on}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>{label}</span>
-      </label>
-      {hint ? <span style={{ opacity: 0.65, fontSize: '0.9em' }}>{hint}</span> : null}
-    </div>
-  )
+interface SectionProps {
+  t: (key: string) => string
+  form: ConfigFormController
+  fallbackPort: number
 }
 
-function Section({ t, form, fallbackPort }: { t: (key: string) => string; form: ConfigFormController; fallbackPort: number }): ReactElement {
+function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   const [snap, setSnap] = useState(() => form.getSnapshot())
   useEffect(() => form.subscribe(() => setSnap(form.getSnapshot())), [form])
 
@@ -142,91 +155,114 @@ function Section({ t, form, fallbackPort }: { t: (key: string) => string; form: 
   const { state, unreachable } = useAdminState(enabled, port)
 
   const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
   const flip = (next: boolean): void => {
+    setFailed(false)
     setBusy(true)
-    void form
+    form
       .set('enabled', next)
+      .then((accepted) => {
+        if (!accepted) setFailed(true)
+      })
+      .catch(() => setFailed(true))
       .finally(() => setBusy(false))
   }
 
+  const [actionError, setActionError] = useState<string | undefined>(undefined)
+  const runAction = (path: string, body?: unknown): void => {
+    setActionError(undefined)
+    adminAction(port, path, body).catch((error: Error) => setActionError(error.message))
+  }
+
   return (
-    <section style={{ display: 'grid', gap: 16 }}>
-      <p style={{ margin: 0, opacity: 0.8 }}>{t('description')}</p>
+    <section className="dshr-section">
+      <p className="dshr-description">{t('description')}</p>
 
       {!loaded ? (
-        <span style={{ opacity: 0.65 }}>{t('status.loading')}</span>
+        <p className="dshr-muted">{t('status.loading')}</p>
       ) : !snap.writable ? (
-        <span style={{ opacity: 0.65 }}>{t('status.unwritable')}</span>
+        <p className="dshr-muted">{t('status.unwritable')}</p>
       ) : (
-        <Toggle
-          on={enabled}
-          disabled={busy}
-          label={t('allow')}
-          hint={t('allow.hint')}
-          onChange={flip}
-        />
+        <div className="dshr-row">
+          <div>
+            <div className="dshr-title">{t('allow')}</div>
+            <div className="dshr-description">{t('allow.hint')}</div>
+            {failed ? (
+              <div className="dshr-alert" role="alert">
+                {t('write.failed')}
+              </div>
+            ) : null}
+          </div>
+          <Switch checked={enabled} disabled={busy} label={t('allow')} onChange={flip} />
+        </div>
       )}
 
       {enabled ? (
         unreachable || !state ? (
-          <span style={{ opacity: 0.65 }}>{t('qr.unreachable')}</span>
+          <p className="dshr-muted">{t('qr.unreachable')}</p>
         ) : (
           <>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="dshr-qr">
               <div
-                style={{ width: 200, height: 200, background: '#fff', borderRadius: 8, padding: 6 }}
+                className="dshr-qr-box"
                 // Server-generated SVG from our own qrcode output; no user input flows into it.
                 dangerouslySetInnerHTML={{ __html: state.pairingQrSvg }}
               />
-              <div style={{ display: 'grid', gap: 8 }}>
-                <strong>{t('qr.title')}</strong>
-                <span>
-                  {t('qr.code')}：<code style={{ fontSize: 24, letterSpacing: 6, fontWeight: 600 }}>{state.pairingCode}</code>
-                </span>
-                <span style={{ opacity: 0.65, fontSize: '0.9em' }}>
+              <div className="dshr-meta">
+                <div className="dshr-title">{t('qr.title')}</div>
+                <div>
+                  {t('qr.code')}：<span className="dshr-code">{state.pairingCode}</span>
+                </div>
+                <div className="dshr-muted">
                   {t('qr.addresses')}：{state.server.addresses.map((a) => `${a}:${state.server.port}`).join('、')}
-                </span>
-                <button type="button" onClick={() => void adminAction(port, '/v1/admin/rotate-code')}>
-                  {t('qr.rotate')}
-                </button>
+                </div>
+                <div>
+                  <Button variant="outline" onClick={() => runAction('/v1/admin/rotate-code')}>
+                    {t('qr.rotate')}
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gap: 6 }}>
-              <strong>{t('devices').replace('{n}', String(state.devices.length))}</strong>
-              <table style={{ borderCollapse: 'collapse' }}>
+            <div className="dshr-section">
+              <div className="dshr-title">{t('devices').replace('{n}', String(state.devices.length))}</div>
+              <table className="dshr-table">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', padding: '4px 10px' }}>{t('devices.name')}</th>
-                    <th style={{ textAlign: 'left', padding: '4px 10px' }}>{t('devices.createdAt')}</th>
-                    <th style={{ textAlign: 'left', padding: '4px 10px' }}>{t('devices.lastSeenAt')}</th>
-                    <th />
+                    <th>{t('devices.name')}</th>
+                    <th>{t('devices.createdAt')}</th>
+                    <th>{t('devices.lastSeenAt')}</th>
+                    <th aria-hidden />
                   </tr>
                 </thead>
                 <tbody>
                   {state.devices.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ opacity: 0.65, padding: '4px 10px' }}>{t('devices.empty')}</td>
+                      <td colSpan={4} className="dshr-muted">
+                        {t('devices.empty')}
+                      </td>
                     </tr>
                   ) : (
                     state.devices.map((device) => (
                       <tr key={device.id}>
-                        <td style={{ padding: '4px 10px' }}>{device.name}</td>
-                        <td style={{ padding: '4px 10px', opacity: 0.7 }}>{new Date(device.createdAt).toLocaleString()}</td>
-                        <td style={{ padding: '4px 10px', opacity: 0.7 }}>{new Date(device.lastSeenAt).toLocaleString()}</td>
-                        <td style={{ padding: '4px 10px' }}>
-                          <button
-                            type="button"
-                            onClick={() => void adminAction(port, '/v1/admin/revoke', { deviceId: device.id })}
-                          >
+                        <td>{device.name}</td>
+                        <td className="dshr-muted">{new Date(device.createdAt).toLocaleString()}</td>
+                        <td className="dshr-muted">{new Date(device.lastSeenAt).toLocaleString()}</td>
+                        <td>
+                          <Button variant="ghost" onClick={() => runAction('/v1/admin/revoke', { deviceId: device.id })}>
                             {t('devices.revoke')}
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))
                   )}
                 </tbody>
               </table>
+              {actionError ? (
+                <div className="dshr-alert" role="alert">
+                  {actionError}
+                </div>
+              ) : null}
             </div>
           </>
         )
@@ -254,14 +290,20 @@ interface ClientContext {
 
 /**
  * Browser half of dsh-remote: one Settings page owning the whole surface —
- * the allow-remote toggle (persisted through the native plugin config form,
- * so flipping it stops/starts the server via a fiber remount) plus the
- * pairing QR, pairing code, host addresses, and device roster.
+ * the allow-remote toggle (a primitives Switch over the native plugin config
+ * form, so flipping it stops/starts the server via a fiber remount) plus the
+ * pairing QR, pairing code, host addresses, and device roster. Page props are
+ * one stable object, matching how every shipped settings section feeds its
+ * occupant.
  */
 export function apply(ctx: ClientContext, config: ClientConfig = {}): void {
+  injectCss()
   ctx.effect(() => ctx.locale.register(NS, locale))
   const t = ctx.locale.bind(NS)
   const form = ctx.configForms.get(ENTRY_ID)
+  // One stable props object: a fresh literal per inject() call remounts the
+  // occupant on every host-page render and eats interaction state.
+  const props = { t, form, fallbackPort: config.port ?? DEFAULT_PORT }
 
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
@@ -271,7 +313,7 @@ export function apply(ctx: ClientContext, config: ClientConfig = {}): void {
         order: 400,
         label: () => t('nav'),
         locale: NS,
-        inject: () => ({ t, form, fallbackPort: config.port ?? DEFAULT_PORT }),
+        inject: () => props,
       },
       Section,
     ),
