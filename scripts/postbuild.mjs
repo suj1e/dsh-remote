@@ -16,9 +16,14 @@ if (hashed.length === 1) {
 
 const { name } = JSON.parse(readFileSync('package.json', 'utf8'))
 const raw = readFileSync('lib/index.cjs', 'utf8')
+// The CJS body references `exports`/`module` as free variables; the factory
+// scope must provide them (the browser materializes the factory bare).
 const wrapped = `window.__ModuleLoader__.load({
 \tid: ${JSON.stringify(name)},
 \tfactory: (require) => {
+\t\t"use strict";
+\t\tvar module = { exports: {} };
+\t\tvar exports = module.exports;
 ${raw}
 \t\treturn module.exports;
 \t}
