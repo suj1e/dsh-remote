@@ -2,7 +2,8 @@
 // 1. tsdown emits the host declaration with a content-hash suffix (lib/index-*.d.ts);
 //    rename it to the stable lib/index.d.ts that package.json points at.
 // 2. Wrap the raw CJS client bundle into the `window.__ModuleLoader__.load`
-//    factory format the DSH browser module system consumes.
+//    factory format the DSH browser module system consumes, keyed by the
+//    package name so the loader's id match survives renames.
 import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 
 const hashed = readdirSync('lib').filter((name) => /^index-.*\.d\.ts$/.test(name))
@@ -17,9 +18,10 @@ for (const stale of readdirSync('lib').filter((name) => /\.d\.cts$/.test(name)))
   rmSync(`lib/${stale}`)
 }
 
+const { name } = JSON.parse(readFileSync('package.json', 'utf8'))
 const raw = readFileSync('lib/index.cjs', 'utf8')
 const wrapped = `window.__ModuleLoader__.load({
-\tid: "dsh-remote",
+\tid: ${JSON.stringify(name)},
 \tfactory: (require) => {
 ${raw}
 \t\treturn module.exports;
