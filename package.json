@@ -37,7 +37,7 @@
   "scripts": {
     "build": "tsdown && node scripts/postbuild.mjs",
     "prepack": "npm run build",
-    "test": "node --test --experimental-strip-types test/"
+    "test": "node --test 'test/*.test.ts'"
   },
   "keywords": [
     "dsh",
