@@ -35,7 +35,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown && node scripts/fix-dts-name.mjs",
+    "build": "tsdown && node scripts/postbuild.mjs",
     "prepack": "npm run build",
     "test": "node --test --experimental-strip-types test/"
   },
