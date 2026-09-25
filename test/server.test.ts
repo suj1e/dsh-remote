@@ -211,6 +211,51 @@ test('rate limiter window behaviour', () => {
   assert.equal(limiter.lockedFor('1.2.3.4') > 0, false, 'success clears the window')
 })
 
+test('admin state serves QR to trusted GUI origins only', async () => {
+  const h = await startHarness()
+  try {
+    // The standalone pair page is gone; root is unauthenticated 404.
+    assert.equal((await fetch(`${h.url}/`)).status, 404)
+
+    const trusted = await fetch(`${h.url}/v1/admin/state`, {
+      headers: { origin: 'http://127.0.0.1:19387' },
+    })
+    assert.equal(trusted.status, 200)
+    assert.equal(trusted.headers.get('access-control-allow-origin'), 'http://127.0.0.1:19387')
+    const state = (await trusted.json()) as { pairingCode: string; pairingQrSvg: string; deepLink: string; devices: unknown[] }
+    assert.match(state.pairingCode, /^\d{6}$/)
+    assert.match(state.pairingQrSvg, /^<svg/)
+    assert.match(state.deepLink, /^dsh-remote:\/\/pair\?/)
+
+    const electronOrigin = await fetch(`${h.url}/v1/admin/state`, { headers: { origin: 'dsh-app://app' } })
+    assert.equal(electronOrigin.headers.get('access-control-allow-origin'), 'dsh-app://app')
+
+    const hostile = await fetch(`${h.url}/v1/admin/state`, { headers: { origin: 'https://evil.example' } })
+    assert.equal(hostile.status, 200) // loopback curl stays trusted; but no CORS grant:
+    assert.equal(hostile.headers.get('access-control-allow-origin'), null)
+
+    const preflight = await fetch(`${h.url}/v1/admin/revoke`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'http://localhost:19387',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers.get('access-control-allow-origin'), 'http://localhost:19387')
+    assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, POST, OPTIONS')
+
+    const hostilePreflight = await fetch(`${h.url}/v1/admin/revoke`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
+    })
+    assert.equal(hostilePreflight.headers.get('access-control-allow-origin'), null)
+  } finally {
+    await h.close()
+  }
+})
+
 async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!condition()) {

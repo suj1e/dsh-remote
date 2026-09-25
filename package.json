@@ -30,7 +30,8 @@
       "platform": "web",
       "inject": [
         "slots",
-        "locale"
+        "locale",
+        "configForms"
       ]
     }
   },

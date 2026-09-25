@@ -2,15 +2,45 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from 'node:stream'
 import os from 'node:os'
 import { WebSocketServer } from 'ws'
+import QRCode from 'qrcode'
 import { DeviceStore } from './devices.ts'
 import { bearerToken, isLoopback, PairingRateLimiter } from './auth.ts'
 import { endpointAllowed, invokeRemote, type GatewayLike } from './rpc.ts'
 import { PhoneSocket } from './ws.ts'
-import { renderPairPage } from './pair-page.ts'
 import type { Config } from '../config.ts'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
-const PLUGIN_VERSION = '0.1.0'
+const PLUGIN_VERSION = '0.1.2'
+const ENTRY_ID = 'dsh-remote'
+
+/**
+ * Browser origins allowed to call the loopback admin API cross-origin: the
+ * DSH web GUI (any loopback port) and the Electron desktop shell. Everything
+ * else — including public websites probing localhost — gets no CORS grant.
+ */
+const ALLOWED_ORIGIN = /^(?:http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?|dsh-app:\/\/app)$/
+
+function corsHeaders(req: IncomingMessage): Record<string, string> {
+  const origin = req.headers.origin
+  if (typeof origin !== 'string' || !ALLOWED_ORIGIN.test(origin)) return {}
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'false',
+    vary: 'Origin',
+  }
+}
+
+function preflight(req: IncomingMessage, res: ServerResponse): void {
+  const headers = corsHeaders(req)
+  headers['access-control-allow-methods'] = 'GET, POST, OPTIONS'
+  headers['access-control-allow-headers'] = 'content-type'
+  headers['access-control-max-age'] = '600'
+  if (req.headers['access-control-request-private-network'] === 'true') {
+    headers['access-control-allow-private-network'] = 'true'
+  }
+  res.writeHead(204, headers)
+  res.end()
+}
 
 export interface RemoteServerOptions {
   config: Config
@@ -37,9 +67,13 @@ export function lanAddresses(): string[] {
   return result
 }
 
-function json(res: ServerResponse, status: number, value: unknown): void {
+function json(res: ServerResponse, status: number, value: unknown, headers: Record<string, string> = {}): void {
   const body = JSON.stringify(value)
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) })
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': String(Buffer.byteLength(body)),
+    ...headers,
+  })
   res.end(body)
 }
 
@@ -114,7 +148,7 @@ export class RemoteServer {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost')
       const path = url.pathname
-      if (req.method === 'GET' && path === '/') return await this.servePairPage(req, res)
+      if (req.method === 'OPTIONS' && path.startsWith('/v1/admin/')) return preflight(req, res)
       if (req.method === 'GET' && path === '/v1/info') {
         const device = this.authenticate(req)
         if (!device) return json(res, 401, { error: 'auth/required' })
@@ -133,20 +167,6 @@ export class RemoteServer {
 
   private authenticate(req: IncomingMessage) {
     return this.options.store.authenticate(bearerToken(req))
-  }
-
-  private async servePairPage(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    // The pairing code and device roster are only for the local operator.
-    if (!isLoopback(req)) return json(res, 404, { error: 'not-found' })
-    const html = await renderPairPage({
-      hostName: os.hostname(),
-      port: this.listenInfo?.port ?? this.options.config.port,
-      addresses: lanAddresses(),
-      pairingCode: this.options.store.pairingCode,
-      devices: this.options.store.listDevices(),
-    })
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end(html)
   }
 
   private async servePair(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -191,35 +211,55 @@ export class RemoteServer {
     return json(res, 200, result)
   }
 
+  /** Cache the pairing QR SVG; it only changes when code or address changes. */
+  private qrCache: { key: string; svg: string } | undefined
+
+  private async pairingQrSvg(address: string, port: number, code: string): Promise<string> {
+    const deepLink = `dsh-remote://pair?host=${encodeURIComponent(address)}&port=${port}&code=${code}`
+    const key = deepLink
+    if (this.qrCache?.key === key) return this.qrCache.svg
+    const svg = await QRCode.toString(deepLink, { type: 'svg', margin: 1, width: 200 })
+    this.qrCache = { key, svg }
+    return svg
+  }
+
   private async serveAdmin(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+    // Loopback socket plus a CORS grant only for trusted GUI origins.
     if (!isLoopback(req)) return json(res, 404, { error: 'not-found' })
+    const cors = corsHeaders(req)
     if (req.method === 'GET' && path === '/v1/admin/state') {
+      const port = this.listenInfo?.port ?? this.options.config.port
+      const addresses = lanAddresses()
+      const code = this.options.store.pairingCode
       return json(res, 200, {
         ...this.info(),
-        pairingCode: this.options.store.pairingCode,
+        entryId: ENTRY_ID,
+        pairingCode: code,
         pairingCodeUpdatedAt: this.options.store.pairingCodeUpdatedAt,
+        deepLink: `dsh-remote://pair?host=${encodeURIComponent(addresses[0] ?? '127.0.0.1')}&port=${port}&code=${code}`,
+        pairingQrSvg: await this.pairingQrSvg(addresses[0] ?? '127.0.0.1', port, code),
         devices: this.options.store.listDevices(),
-      })
+      }, cors)
     }
     if (req.method === 'POST' && path === '/v1/admin/rotate-code') {
       const code = this.options.store.rotatePairingCode()
       this.options.log?.('pairing code rotated')
-      return json(res, 200, { pairingCode: code })
+      return json(res, 200, { pairingCode: code }, cors)
     }
     if (req.method === 'POST' && path === '/v1/admin/revoke') {
       let body: { deviceId?: unknown }
       try {
         body = (await readJson(req)) as typeof body
       } catch {
-        return json(res, 400, { error: 'admin/bad-request' })
+        return json(res, 400, { error: 'admin/bad-request' }, cors)
       }
       if (typeof body.deviceId !== 'string' || !this.options.store.revoke(body.deviceId)) {
-        return json(res, 404, { error: 'admin/unknown-device' })
+        return json(res, 404, { error: 'admin/unknown-device' }, cors)
       }
       this.options.log?.(`device revoked: ${body.deviceId}`)
-      return json(res, 200, { ok: true })
+      return json(res, 200, { ok: true }, cors)
     }
-    return json(res, 404, { error: 'not-found' })
+    return json(res, 404, { error: 'not-found' }, cors)
   }
 
   private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {

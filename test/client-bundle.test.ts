@@ -32,5 +32,5 @@ test('client bundle materializes in a bare realm', { skip: !existsSync('lib/clie
 
   const exports = captured as { apply?: unknown; inject?: unknown }
   assert.equal(typeof exports?.apply, 'function', 'exports.apply')
-  assert.deepEqual([...(exports?.inject as string[] ?? [])], ['slots', 'locale'], 'exports.inject')
+  assert.deepEqual([...(exports?.inject as string[] ?? [])], ['slots', 'locale', 'configForms'], 'exports.inject')
 })
