@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { Button, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Pill, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 
 const NS = 'dshRemote'
 const ENTRY_ID = 'dsh-remote'
@@ -78,6 +78,8 @@ const CSS = `
 .dshr-alert{color:var(--dsw-alias-state-error-primary);margin-top:4px;font-size:12px;line-height:18px}
 .dshr-text{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;padding:16px 0;font-size:14px;line-height:22px}
 .dshr-qrBox{width:184px;height:184px;background:#fff;border-radius:var(--dsw-radius-md);padding:8px;flex:none}
+.dshr-qrBox svg{width:100%;height:100%;display:block}
+.dshr-pills{display:flex;gap:8px;flex-wrap:wrap}
 .dshr-code{font-size:22px;letter-spacing:8px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
 .dshr-actions{display:flex;gap:8px;flex:none}
 `
@@ -95,25 +97,27 @@ function injectCss(): void {
 
 interface AdminState {
   server: { port: number; addresses: string[] }
+  qrAddress: string
   pairingCode: string
   pairingQrSvg: string
   devices: Array<{ id: string; name: string; createdAt: number; lastSeenAt: number }>
 }
 
-function useAdminState(enabled: boolean, port: number): { state?: AdminState; unreachable: boolean } {
+function useAdminState(enabled: boolean, port: number, address?: string): { state?: AdminState; unreachable: boolean; refresh: () => void } {
   const [state, setState] = useState<AdminState | undefined>(undefined)
   const [unreachable, setUnreachable] = useState(false)
 
   const refresh = useCallback(() => {
     if (!enabled) return
-    fetch(`http://127.0.0.1:${port}/v1/admin/state`)
+    const query = address === undefined ? '' : `?address=${encodeURIComponent(address)}`
+    fetch(`http://127.0.0.1:${port}/v1/admin/state${query}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((value: AdminState) => {
         setState(value)
         setUnreachable(false)
       })
       .catch(() => setUnreachable(true))
-  }, [enabled, port])
+  }, [enabled, port, address])
 
   useEffect(() => {
     if (!enabled) {
@@ -154,7 +158,10 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   const ready = snap.status === 'ready' && config !== undefined
   const enabled = ready && config.enabled !== false
   const port = fallbackPort
-  const { state, unreachable, refresh } = useAdminState(enabled, port)
+
+  // Which NIC the QR encodes; undefined = server default (best guess).
+  const [qrAddress, setQrAddress] = useState<string | undefined>(undefined)
+  const { state, unreachable, refresh } = useAdminState(enabled, port, qrAddress)
 
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -218,8 +225,19 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
                 <div className="dshr-description" style={{ marginTop: 10 }}>
                   {t('qr.code')} <span className="dshr-code">{state.pairingCode}</span>
                 </div>
-                <div className="dshr-description">
-                  {t('qr.addresses')}：{state.server.addresses.map((a) => `${a}:${state.server.port}`).join('、')}
+                <div className="dshr-description" style={{ marginTop: 10 }}>
+                  {t('qr.addresses')}
+                </div>
+                <div className="dshr-pills" style={{ marginTop: 6 }}>
+                  {state.server.addresses.map((address) => (
+                    <Pill
+                      key={address}
+                      active={address === (qrAddress ?? state.qrAddress)}
+                      onClick={() => setQrAddress(address)}
+                    >
+                      {address}:{state.server.port}
+                    </Pill>
+                  ))}
                 </div>
                 <div style={{ marginTop: 10 }}>
                   <Button variant="outline" onClick={() => runAction('/v1/admin/rotate-code')}>

@@ -22,7 +22,7 @@ test('client bundle materializes in a bare realm', { skip: !existsSync('lib/clie
           const stubs: Record<string, unknown> = {
             react: { useState: () => [undefined, () => {}], useEffect: () => {}, useCallback: () => () => {} },
             'react/jsx-runtime': { jsx: () => null, jsxs: () => null, Fragment: 'fragment' },
-            '@deepseek-ai/dsh-client-ui-primitives': { Button: () => null, Switch: () => null },
+            '@deepseek-ai/dsh-client-ui-primitives': { Button: () => null, Switch: () => null, Pill: () => null },
           }
           captured = message.factory((id: string) => stubs[id] ?? (() => null))
         },

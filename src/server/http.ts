@@ -10,7 +10,7 @@ import { PhoneSocket } from './ws.ts'
 import type { Config } from '../config.ts'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
-const PLUGIN_VERSION = '0.1.6'
+const PLUGIN_VERSION = '0.1.7'
 const ENTRY_ID = 'dsh-remote'
 
 /**
@@ -242,16 +242,22 @@ export class RemoteServer {
     if (!isLoopback(req)) return json(res, 404, { error: 'not-found' })
     const cors = corsHeaders(req)
     if (req.method === 'GET' && path === '/v1/admin/state') {
+      const url = new URL(req.url ?? '/', 'http://localhost')
       const port = this.listenInfo?.port ?? this.options.config.port
       const addresses = lanAddresses()
       const code = this.options.store.pairingCode
+      // The page picks which NIC the QR should encode; fall back to the
+      // first (most likely reachable) address when the query omits one.
+      const requested = url.searchParams.get('address')
+      const address = addresses.includes(requested ?? '') ? requested! : (addresses[0] ?? '127.0.0.1')
       return json(res, 200, {
         ...this.info(),
         entryId: ENTRY_ID,
         pairingCode: code,
         pairingCodeUpdatedAt: this.options.store.pairingCodeUpdatedAt,
-        deepLink: `dsh-remote://pair?host=${encodeURIComponent(addresses[0] ?? '127.0.0.1')}&port=${port}&code=${code}`,
-        pairingQrSvg: await this.pairingQrSvg(addresses[0] ?? '127.0.0.1', port, code),
+        qrAddress: address,
+        deepLink: `dsh-remote://pair?host=${encodeURIComponent(address)}&port=${port}&code=${code}`,
+        pairingQrSvg: await this.pairingQrSvg(address, port, code),
         devices: this.options.store.listDevices(),
       }, cors)
     }
