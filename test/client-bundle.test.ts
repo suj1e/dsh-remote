@@ -35,3 +35,12 @@ test('client bundle materializes in a bare realm', { skip: !existsSync('lib/clie
   assert.equal(typeof exports?.apply, 'function', 'exports.apply')
   assert.deepEqual([...(exports?.inject as string[] ?? [])], ['slots', 'locale', 'configForms'], 'exports.inject')
 })
+
+test('host bundle reports the package version', { skip: !existsSync('lib/index.js') && 'run pnpm run build first' }, () => {
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }
+  const host = readFileSync('lib/index.js', 'utf8')
+  assert.ok(
+    host.includes(`"${pkg.version}"`),
+    `lib/index.js should embed the current version ${pkg.version} (PLUGIN_VERSION drift)`,
+  )
+})
