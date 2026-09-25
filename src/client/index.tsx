@@ -65,21 +65,19 @@ const locale: Locale = {
 }
 
 /* Plugin-scoped styles over --dsw-* design tokens; injected once at
- * materialization, exactly like a compiled css-module side effect. */
+ * materialization, exactly like a compiled css-module side effect. The row
+ * vocabulary mirrors the shipped General settings page: a full-width flex
+ * column of rows separated by hairline borders. */
 const CSS = `
-.dshr-row{border-bottom:.5px solid var(--dsw-alias-border-l);justify-content:space-between;align-items:center;gap:24px;padding:16px 0;display:flex}
-.dshr-title{font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary)}
+.dshr-section{flex-direction:column;width:100%;display:flex}
+.dshr-row{border-bottom:.5px solid var(--dsw-alias-border-l2);justify-content:space-between;align-items:center;gap:24px;padding:16px 0;display:flex}
+.dshr-title{font-size:14px;line-height:20px}
 .dshr-description{color:var(--dsw-alias-label-secondary);margin-top:4px;font-size:12px;line-height:18px}
 .dshr-alert{color:var(--dsw-alias-state-error-primary);margin-top:4px;font-size:12px;line-height:18px}
-.dshr-section{margin-top:20px;display:grid;gap:12px}
-.dshr-qr{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
-.dshr-qr-box{width:200px;height:200px;background:#fff;border-radius:10px;padding:8px;flex:none}
-.dshr-meta{display:grid;gap:8px;min-width:0}
-.dshr-code{font-size:26px;letter-spacing:8px;font-weight:600;font-variant-numeric:tabular-nums}
-.dshr-muted{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
-.dshr-table{border-collapse:collapse;width:100%}
-.dshr-table th{color:var(--dsw-alias-label-secondary);font-weight:500;text-align:left;padding:6px 12px 6px 0;font-size:12px}
-.dshr-table td{border-top:.5px solid var(--dsw-alias-border-l);padding:8px 12px 8px 0;font-size:13px;vertical-align:middle}
+.dshr-text{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;padding:16px 0;font-size:14px;line-height:22px}
+.dshr-qrBox{width:184px;height:184px;background:#fff;border-radius:var(--dsw-radius-md);padding:8px;flex:none}
+.dshr-code{font-size:22px;letter-spacing:8px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
+.dshr-actions{display:flex;gap:8px;flex:none}
 `
 
 function injectCss(): void {
@@ -175,17 +173,16 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
   }
 
   return (
-    <section className="dshr-section">
-      <p className="dshr-description">{t('description')}</p>
-
+    <div className="dshr-section">
       {!loaded ? (
-        <p className="dshr-muted">{t('status.loading')}</p>
+        <div className="dshr-text">{t('status.loading')}</div>
       ) : !snap.writable ? (
-        <p className="dshr-muted">{t('status.unwritable')}</p>
+        <div className="dshr-text">{t('status.unwritable')}</div>
       ) : (
         <div className="dshr-row">
           <div>
             <div className="dshr-title">{t('allow')}</div>
+            <div className="dshr-description">{t('description')}</div>
             <div className="dshr-description">{t('allow.hint')}</div>
             {failed ? (
               <div className="dshr-alert" role="alert">
@@ -199,75 +196,70 @@ function Section({ t, form, fallbackPort }: SectionProps): ReactElement {
 
       {enabled ? (
         unreachable || !state ? (
-          <p className="dshr-muted">{t('qr.unreachable')}</p>
+          <div className="dshr-row">
+            <div>
+              <div className="dshr-title">{t('allow')}</div>
+              <div className="dshr-description">{t('qr.unreachable')}</div>
+            </div>
+          </div>
         ) : (
           <>
-            <div className="dshr-qr">
-              <div
-                className="dshr-qr-box"
-                // Server-generated SVG from our own qrcode output; no user input flows into it.
-                dangerouslySetInnerHTML={{ __html: state.pairingQrSvg }}
-              />
-              <div className="dshr-meta">
+            <div className="dshr-row">
+              <div style={{ minWidth: 0 }}>
                 <div className="dshr-title">{t('qr.title')}</div>
-                <div>
-                  {t('qr.code')}：<span className="dshr-code">{state.pairingCode}</span>
+                <div className="dshr-description" style={{ marginTop: 10 }}>
+                  {t('qr.code')} <span className="dshr-code">{state.pairingCode}</span>
                 </div>
-                <div className="dshr-muted">
+                <div className="dshr-description">
                   {t('qr.addresses')}：{state.server.addresses.map((a) => `${a}:${state.server.port}`).join('、')}
                 </div>
-                <div>
+                <div style={{ marginTop: 10 }}>
                   <Button variant="outline" onClick={() => runAction('/v1/admin/rotate-code')}>
                     {t('qr.rotate')}
                   </Button>
                 </div>
               </div>
+              <div
+                className="dshr-qrBox"
+                // Server-generated SVG from our own qrcode output; no user input flows into it.
+                dangerouslySetInnerHTML={{ __html: state.pairingQrSvg }}
+              />
             </div>
 
-            <div className="dshr-section">
-              <div className="dshr-title">{t('devices').replace('{n}', String(state.devices.length))}</div>
-              <table className="dshr-table">
-                <thead>
-                  <tr>
-                    <th>{t('devices.name')}</th>
-                    <th>{t('devices.createdAt')}</th>
-                    <th>{t('devices.lastSeenAt')}</th>
-                    <th aria-hidden />
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.devices.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="dshr-muted">
-                        {t('devices.empty')}
-                      </td>
-                    </tr>
-                  ) : (
-                    state.devices.map((device) => (
-                      <tr key={device.id}>
-                        <td>{device.name}</td>
-                        <td className="dshr-muted">{new Date(device.createdAt).toLocaleString()}</td>
-                        <td className="dshr-muted">{new Date(device.lastSeenAt).toLocaleString()}</td>
-                        <td>
-                          <Button variant="ghost" onClick={() => runAction('/v1/admin/revoke', { deviceId: device.id })}>
-                            {t('devices.revoke')}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              {actionError ? (
+            <div className="dshr-text">{t('devices').replace('{n}', String(state.devices.length))}</div>
+            {state.devices.length === 0 ? (
+              <div className="dshr-row">
+                <div className="dshr-description">{t('devices.empty')}</div>
+              </div>
+            ) : (
+              state.devices.map((device) => (
+                <div className="dshr-row" key={device.id}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="dshr-title">{device.name}</div>
+                    <div className="dshr-description">
+                      {t('devices.createdAt')} {new Date(device.createdAt).toLocaleString()} · {t('devices.lastSeenAt')}{' '}
+                      {new Date(device.lastSeenAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="dshr-actions">
+                    <Button variant="ghost" onClick={() => runAction('/v1/admin/revoke', { deviceId: device.id })}>
+                      {t('devices.revoke')}
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+            {actionError ? (
+              <div className="dshr-row">
                 <div className="dshr-alert" role="alert">
                   {actionError}
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </>
         )
       ) : null}
-    </section>
+    </div>
   )
 }
 
