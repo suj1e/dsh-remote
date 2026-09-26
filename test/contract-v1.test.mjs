@@ -79,6 +79,27 @@ test('unary fixture preserves the official Connection request envelope and endpo
   assert.deepEqual(request.payload, { args: { _request: {} } })
 })
 
+test('session list fixture preserves the official cold-safe summary fields', async () => {
+  const response = await fixture('rpc-response.session-list.json')
+
+  assert.equal(response.type, 'server-response')
+  assert.equal(response.result.ok, true)
+  assert.equal(response.result.value.items.length, 1)
+  assert.deepEqual(response.result.value.items[0], {
+    agentAvailable: true,
+    sessionId: 'session-fixture',
+    updatedAt: 1790400000000,
+    running: true,
+    blank: false,
+    cwd: '/work/example-project',
+    projections: {
+      kind: 'sequenced',
+      asOfSeq: 8,
+      values: { title: 'Fixture session' },
+    },
+  })
+})
+
 test('business failures retain the official server-response result shape', async () => {
   const response = await fixture('rpc-response.error.json')
 

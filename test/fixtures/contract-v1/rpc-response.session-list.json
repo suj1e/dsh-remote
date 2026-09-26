@@ -1,0 +1,26 @@
+{
+  "type": "server-response",
+  "rpcId": "fixture-rpc-001",
+  "result": {
+    "ok": true,
+    "value": {
+      "items": [
+        {
+          "agentAvailable": true,
+          "sessionId": "session-fixture",
+          "updatedAt": 1790400000000,
+          "running": true,
+          "blank": false,
+          "cwd": "/work/example-project",
+          "projections": {
+            "kind": "sequenced",
+            "asOfSeq": 8,
+            "values": {
+              "title": "Fixture session"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

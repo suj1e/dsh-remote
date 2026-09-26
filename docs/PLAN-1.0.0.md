@@ -102,7 +102,7 @@ M0 的契约验证使用独立临时 workspace/session，不操作用户真实�
 ### 当前实施检查点（2026-09-26）
 
 - 接入面：生产 Cordis effect 已持有 registry 与 listener 生命周期；Fastify 实现 `/v1/pair`、`/v1/info`、Bearer 设备认证、官方 shared FetchHandler unary/streaming upload，以及基于官方 Remote mux parser + Gateway `wireStream` 的 WebSocket carrier。默认拒绝 endpoint policy 与实时 permission catalog 检查保留。
-- 验证：`pnpm test` 在 DSH Electron Node 24.18.1 下 TypeScript build + 27 项测试通过。隔离 DSH profile 中加载正式插件后，实际 DSH 0.1.7-rc.2 Host 验证 pairing/info/Bearer、workspace/session、multipart `readBytes`、原始上传和两条 `$events` 逻辑流的 ready/单流取消隔离。
+- 验证：`pnpm test` 在 DSH Electron Node 24.18.1 下 TypeScript build + 28 项测试通过，包含官方 session/list 响应样本。隔离 DSH profile 中加载正式插件后，实际 DSH 0.1.7-rc.2 Host 验证 pairing/info/Bearer、workspace/session、multipart `readBytes`、原始上传和两条 `$events` 逻辑流的 ready/单流取消隔离。
 - 双端契约：`deviceAccess` schema 及 pair/info/Remote fixtures 已同步到 dsh-mobile，Swift DTO 测试通过。
 - 未退出项：尚无 iOS→Host/LiveContainer 联通；approval/question waterfall uplink、上传取消和文件读回、TLS proxy/部署安全、负载背压、Windows/Linux、Host 设置 UI/配对二维码、发布 CI 仍未验证/实现。已通过的 macOS carrier 样例不代表三平台兼容或 M0 完成。
 
