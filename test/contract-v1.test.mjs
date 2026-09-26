@@ -24,7 +24,9 @@ test('contract fixture pins the installed DSH source baseline and bounded real-H
     'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
   ])
   assert.deepEqual(baseline.hostRoundTripEvidence.testedStreams, ['$events', 'workspace/follow'])
+  assert.ok(baseline.hostRoundTripEvidence.additionalChecks.includes('workspace-follow-baseline-after-new-connection'))
   assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no Windows/Linux Host'))
+  assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no iOS network-reconnect generation test'))
 })
 
 test('planned endpoint policy is exact, least-privilege, and guards generic mutation APIs', async () => {

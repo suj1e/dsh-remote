@@ -116,7 +116,7 @@
     "kind": "read-only inspection of the installed desktop app.asar",
     "capturedAt": "2026-09-26",
     "hostRoundTrip": "isolated-production-plugin-carrier-on-macos",
-    "webSocketAdapter": "production-carrier-and-real-gateway-events-and-workspace-follow-on-macos",
+    "webSocketAdapter": "production-carrier-and-real-gateway-events-and-workspace-follow-reconnect-on-macos",
     "sourcePaths": [
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/README.md",
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/stream-protocol.js",
@@ -242,7 +242,7 @@
     "testedEndpoints": ["workspace/create", "session/create", "workspace/rename", "workspace/follow", "workspaceFiles/readBytes"],
     "testedFetchRoutes": ["POST /api/session/uploadFileBinary"],
     "testedStreams": ["$events", "workspace/follow"],
-    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "workspace-follow-baseline-and-rename-increment", "dual-logical-stream-cancellation-isolation"],
-    "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no workspace-follow reconnect/generation test", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
+    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "workspace-follow-baseline-and-rename-increment", "workspace-follow-baseline-after-new-connection", "dual-logical-stream-cancellation-isolation"],
+    "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no iOS network-reconnect generation test", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
   }
 }

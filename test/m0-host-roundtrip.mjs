@@ -234,6 +234,52 @@ await new Promise((resolve, reject) => {
   remoteSocket.close(1000, 'M0 production carrier probe complete')
 })
 
+const reconnectedSocket = new WebSocket(remoteMuxURL, {
+  headers: { authorization: `Bearer ${paired.deviceToken}` },
+})
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Timed out reconnecting to the production Remote WebSocket carrier.')), 5_000)
+  reconnectedSocket.once('open', () => {
+    clearTimeout(timer)
+    resolve()
+  })
+  reconnectedSocket.once('error', (error) => {
+    clearTimeout(timer)
+    reject(error)
+  })
+})
+const reconnectedStreamId = 'm0-product-workspace-follow-reconnected'
+const reconnectedBaselineWait = new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Timed out waiting for the reconnected workspace baseline.')), 5_000)
+  reconnectedSocket.once('message', (data) => {
+    clearTimeout(timer)
+    resolve(parseRemoteStreamServerMessage(data.toString()))
+  })
+  reconnectedSocket.once('error', (error) => {
+    clearTimeout(timer)
+    reject(error)
+  })
+})
+reconnectedSocket.send(JSON.stringify({ ...workspaceFollowOpen, streamId: reconnectedStreamId }))
+const reconnectedBaselineFrame = await reconnectedBaselineWait
+assert.equal(reconnectedBaselineFrame.type, 'item')
+assert.equal(reconnectedBaselineFrame.streamId, reconnectedStreamId)
+assert.equal(reconnectedBaselineFrame.value?.type, 'baseline')
+const reconnectedWorkspace = reconnectedBaselineFrame.value.value.items.find((item) => item.workspaceId === workspace.value.workspace.workspaceId)
+assert.equal(reconnectedWorkspace?.title, 'M0 renamed workspace', 'new physical connection receives the latest complete workspace state')
+assert.ok(reconnectedWorkspace?.sessionIds.includes(session.value.sessionId))
+assert.ok(Array.isArray(reconnectedBaselineFrame.value.value.archivedSessionIds))
+assert.ok(Array.isArray(reconnectedBaselineFrame.value.value.pinnedSessionIds))
+reconnectedSocket.send(JSON.stringify({ type: 'cancel', streamId: reconnectedStreamId }))
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Reconnected production Remote WebSocket did not close.')), 5_000)
+  reconnectedSocket.once('close', () => {
+    clearTimeout(timer)
+    resolve()
+  })
+  reconnectedSocket.close(1000, 'M0 reconnect probe complete')
+})
+
 const streamOpen = JSON.parse(await readFile(new URL('./fixtures/contract-v1/stream-open.events.json', import.meta.url), 'utf8'))
 streamOpen.streamId = 'm0-host-events'
 const stream = await fetch(`${baseURL}/m0/stream/probe`, {
@@ -336,6 +382,7 @@ console.log(JSON.stringify({
   eventStreamCancellationSettled: streamResult.cancellationSettled,
   productionPairingAndInfo: true,
   productionWorkspaceFollowBaselineAndUpsert: true,
+  productionWorkspaceFollowReconnectBaseline: true,
   productionReadBytesHex: Buffer.from(remoteRead.byteParts.get('bytes-0')).toString('hex'),
   productionStreamingUploadSucceeded: true,
   productionWebSocketMuxReady: true,
