@@ -64,7 +64,7 @@
       "plugin": ["name", "version"],
       "dsh": ["version"],
       "host": ["instanceId", "name", "platform"],
-      "endpoints": ["unary", "streams", "fetchRoutes"],
+      "endpoints": ["unary", "gatewayInternalUnary", "streams", "fetchRoutes"],
       "transports": ["http", "websocket", "streamingUpload"],
       "limits": ["jsonRequestBytes", "uploadBytes", "websocketFrameBytes", "websocketConnections", "streamsPerSocket", "socketBufferedBytes"],
       "server": ["addresses"]
@@ -206,7 +206,8 @@
     ],
     "argumentGuards": {
       "commands/execute": "Only the /permission command; preset argument must be present in permissionPresets/catalog.",
-      "settings/mutate": "Only exact default-setting paths confirmed by the pinned host schema; always send expectedRevision and validate model/permission catalog values. Still denied until the production field guard is implemented and tested."
+      "settings/mutate": "Only exact default-setting paths confirmed by the pinned host schema; always send expectedRevision and validate model/permission catalog values. Still denied until the production field guard is implemented and tested.",
+      "$events/result": "Special internal exception: require the pinned Gateway parseRemoteEventResult payload shape, then forward unchanged so the official Gateway checks active clientId and pending eventId."
     },
     "notExposed": [
       "account/*",
@@ -236,14 +237,27 @@
       "session/workspacePathApplications"
     ]
   },
+  "eventDelivery": {
+    "streamEndpoint": "$events",
+    "resultEndpoint": "$events/result",
+    "resultTransport": "official POST /api/$events/result unary RPC; the $events mux stream is downlink-only and Gateway releases/ignores its uplink",
+    "ready": "clientId identifies only the currently active event-stream generation",
+    "downlinkFrames": ["ready", "emit", "waterfall", "cancel"],
+    "waterfallFields": ["type", "event", "eventId", "agentId", "request"],
+    "resultFields": ["clientId", "eventId", "outcome"],
+    "outcomes": ["next", "result", "rejected"],
+    "settlement": "A result settles the pending Host waterfall; rejected cancels it; next withdraws only this delivery, and if no deliveries remain the Host continues with next.",
+    "connectedClients": "The Gateway may deliver a pending waterfall to multiple active event clients. The first terminal result/rejection wins; the others receive cancellation.",
+    "reconnect": "Disconnect withdraws that generation's delivery. A still-pending waterfall is delivered to a new event client with that generation's clientId and the same eventId."
+  },
   "endpointInventoryStatus": "remote descriptor inventory source-verified; selected workspace/session/readBytes, workspace-follow recovery, and settings describe/CAS host checks verified; production settings-field guard and remaining allowlist calls pending",
   "hostRoundTripEvidence": {
     "status": "isolated-production-plugin-carrier-and-official-host-handler-verified-on-macos-only",
     "dshVersion": "0.1.7-rc.2",
-    "testedEndpoints": ["settings/describe", "settings/mutate", "workspace/create", "session/create", "workspace/rename", "workspace/follow", "workspaceFiles/readBytes"],
+    "testedEndpoints": ["settings/describe", "settings/mutate", "$events/result", "workspace/create", "session/create", "workspace/rename", "workspace/follow", "workspaceFiles/readBytes"],
     "testedFetchRoutes": ["POST /api/session/uploadFileBinary"],
     "testedStreams": ["$events", "workspace/follow"],
-    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "secrets-redacted-settings-describe-schema", "settings-revision-conflict-and-current-revision-cas", "workspace-follow-baseline-and-rename-increment", "workspace-follow-baseline-after-new-connection", "dual-logical-stream-cancellation-isolation"],
+    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "secrets-redacted-settings-describe-schema", "settings-revision-conflict-and-current-revision-cas", "official-event-result-current-generation-rpc", "malformed-event-result-rejected-before-host", "stale-event-client-id-rejected-by-official-gateway", "workspace-follow-baseline-and-rename-increment", "workspace-follow-baseline-after-new-connection", "dual-logical-stream-cancellation-isolation"],
     "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no iOS network-reconnect generation test", "no default-setting current-versus-next-session effect test", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
   }
 }

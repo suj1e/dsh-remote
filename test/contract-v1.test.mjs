@@ -21,7 +21,7 @@ test('contract fixture pins the installed DSH source baseline and bounded real-H
   assert.equal(baseline.dsh.appAsarSha256, 'afb3958a1a10e1abb2f48083ffec0d270eddec668a393c59e20db4f56ade6fde')
   assert.equal(baseline.sourceEvidence.hostRoundTrip, 'isolated-production-plugin-carrier-and-official-host-handler-on-macos')
   assert.deepEqual(baseline.hostRoundTripEvidence.testedEndpoints, [
-    'settings/describe', 'settings/mutate', 'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
+    'settings/describe', 'settings/mutate', '$events/result', 'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
   ])
   assert.deepEqual(baseline.hostRoundTripEvidence.testedStreams, ['$events', 'workspace/follow'])
   assert.ok(baseline.hostRoundTripEvidence.additionalChecks.includes('settings-revision-conflict-and-current-revision-cas'))
@@ -56,6 +56,23 @@ test('planned endpoint policy is exact, least-privilege, and guards generic muta
   assert.deepEqual(policy.eventAllowlist, ['approval/request', 'user-questions/request'])
 })
 
+test('event results use the pinned Gateway unary endpoint and generation-scoped identifiers', async () => {
+  const baseline = await contract()
+  const request = await fixture('rpc-request.events-result.json')
+  const args = request.payload.args
+
+  assert.equal(baseline.eventDelivery.streamEndpoint, '$events')
+  assert.equal(baseline.eventDelivery.resultEndpoint, '$events/result')
+  assert.match(baseline.eventDelivery.resultTransport, /POST \/api\/\$events\/result unary RPC/)
+  assert.match(baseline.eventDelivery.resultTransport, /downlink-only/)
+  assert.ok(baseline.endpointPolicy.gatewayInternalUnary.includes('$events/result'))
+  assert.equal(baseline.endpointPolicy.unary.includes('$events/result'), false)
+  assert.equal(request.type, 'client-request')
+  assert.equal(request.method, '$events/result')
+  assert.deepEqual(Object.keys(args).sort(), ['clientId', 'eventId', 'outcome'])
+  assert.deepEqual(args.outcome, { kind: 'result', value: 'allowed-once' })
+})
+
 test('device pairing fixtures pin access metadata shape and keep the token pair-only', async () => {
   const baseline = await contract()
   const request = await fixture('pair-request.json')
@@ -68,6 +85,8 @@ test('device pairing fixtures pin access metadata shape and keep the token pair-
   assert.equal(request.code.length, 10)
   assert.deepEqual(Object.keys(paired).sort(), baseline.deviceAccess.pairing.successFields.slice().sort())
   assert.deepEqual(Object.keys(info).sort(), baseline.deviceAccess.info.successFields.slice().sort())
+  assert.deepEqual(Object.keys(paired.endpoints).sort(), baseline.deviceAccess.metadata.endpoints.slice().sort())
+  assert.deepEqual(paired.endpoints.gatewayInternalUnary, ['$events/result'])
   assert.match(paired.deviceToken, /^[A-Za-z0-9_-]{43}$/)
   assert.equal('deviceToken' in info, false)
   assert.equal(paired.host.instanceId, info.host.instanceId)

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { parseRemoteEventResult } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 
 type ContractPolicy = {
   endpointPolicy: {
@@ -56,6 +57,17 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
+function isOfficialEventResultPayload(payload: unknown): boolean {
+  const envelope = record(payload)
+  if (!envelope || Object.keys(envelope).length !== 1 || !Object.hasOwn(envelope, 'args')) return false
+  try {
+    parseRemoteEventResult(envelope.args)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function authorizePermissionCommand(payload: unknown, context: PermissionContext): boolean {
   const envelope = record(payload)
   const args = record(envelope?.args)
@@ -87,7 +99,12 @@ export function authorizeUnaryRequest(input: {
 
   const endpoint = parseEndpointPath(input.path)
   if (!endpoint) return deny('malformed-endpoint')
-  if (internalEndpoints.has(endpoint)) return deny('gateway-internal-only')
+  if (internalEndpoints.has(endpoint)) {
+    if (endpoint === '$events/result' && isOfficialEventResultPayload(input.payload)) {
+      return { allowed: true, endpoint }
+    }
+    return deny('gateway-internal-only')
+  }
   if (endpoint === 'settings/mutate') return deny('settings-mutation-not-enabled')
   if (!unaryEndpoints.has(endpoint)) return deny('endpoint-not-allowed')
 

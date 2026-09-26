@@ -27,11 +27,36 @@ test('allows exact official unary endpoint paths only', () => {
   })
 })
 
-test('keeps Gateway-internal event replies out of ordinary client RPC', () => {
+test('allows only the exact official Gateway event-result RPC shape', () => {
   assert.deepEqual(authorize('/api/$events/result'), {
     allowed: false,
     denial: 'gateway-internal-only',
   })
+  assert.deepEqual(authorize('/api/$events/result', {
+    args: {
+      clientId: 'event-client-1',
+      eventId: 'event-request-1',
+      outcome: { kind: 'result', value: 'allowed-once' },
+    },
+  }), { allowed: true, endpoint: '$events/result' })
+  assert.deepEqual(authorize('/api/$events/result', {
+    args: { clientId: 'event-client-1', eventId: 'event-request-1', outcome: { kind: 'next' } },
+  }), { allowed: true, endpoint: '$events/result' })
+  assert.deepEqual(authorize('/api/$events/result', {
+    args: {
+      clientId: 'event-client-1',
+      eventId: 'event-request-1',
+      outcome: { kind: 'result', value: 'allowed-once', extra: true },
+    },
+  }), { allowed: false, denial: 'gateway-internal-only' })
+  assert.deepEqual(authorize('/api/$events/result', {
+    args: {
+      clientId: 'event-client-1',
+      eventId: 'event-request-1',
+      outcome: { kind: 'result', value: 'allowed-once' },
+    },
+    extra: true,
+  }), { allowed: false, denial: 'gateway-internal-only' })
   assert.equal(authorize('/api/$events').allowed, false)
 })
 

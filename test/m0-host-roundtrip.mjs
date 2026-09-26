@@ -270,6 +270,8 @@ async function openRemoteEvents(streamId) {
   assert.equal(frame.type, 'item')
   assert.equal(frame.streamId, streamId)
   assert.equal(frame.value?.type, 'ready')
+  assert.equal(typeof frame.value?.clientId, 'string')
+  return frame.value.clientId
 }
 const workspaceFollowOpen = JSON.parse(await readFile(new URL('./fixtures/contract-v1/stream-open.workspace-follow.json', import.meta.url), 'utf8'))
 const workspaceBaselineWait = nextRemoteFrame()
@@ -292,8 +294,45 @@ assert.equal(renamedWorkspaceFrame.value?.type, 'upsert')
 assert.equal(renamedWorkspaceFrame.value.workspace.title, 'M0 renamed workspace')
 remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-workspace-follow' }))
 
-await openRemoteEvents('m0-product-events-1')
+const activeEventClientId = await openRemoteEvents('m0-product-events-1')
 await openRemoteEvents('m0-product-events-2')
+const eventResult = await remoteRpc('$events/result', {
+  clientId: activeEventClientId,
+  eventId: 'm0-no-pending-waterfall',
+  outcome: { kind: 'next' },
+})
+assert.equal(eventResult.value, undefined, 'the official current-generation result RPC accepts the no-op for a non-pending event')
+const malformedEventResult = await fetch(`${remoteBaseURL}/api/$events/result`, {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${paired.deviceToken}`,
+    'content-type': 'application/json',
+  },
+  body: JSON.stringify({
+    type: 'client-request',
+    rpcId: 'm0-malformed-event-result',
+    method: '$events/result',
+    payload: { args: { clientId: activeEventClientId, eventId: 'm0-invalid', outcome: { kind: 'next', extra: true } } },
+  }),
+})
+assert.equal(malformedEventResult.status, 403, 'the production carrier blocks malformed Gateway-internal event outcomes')
+const staleEventResult = await fetch(`${remoteBaseURL}/api/$events/result`, {
+  method: 'POST',
+  headers: {
+    authorization: `Bearer ${paired.deviceToken}`,
+    'content-type': 'application/json',
+  },
+  body: JSON.stringify({
+    type: 'client-request',
+    rpcId: 'm0-stale-event-result',
+    method: '$events/result',
+    payload: { args: { clientId: 'stale-event-client', eventId: 'm0-invalid', outcome: { kind: 'next' } } },
+  }),
+})
+assert.equal(staleEventResult.status, 200)
+const staleEventEnvelope = await staleEventResult.json()
+assert.equal(staleEventEnvelope.result.ok, false, 'the official Gateway rejects an event result from an expired stream generation')
+assert.equal(staleEventEnvelope.result.error.code, 'gateway/internal')
 remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-events-1' }))
 assert.equal(await nextRemoteFrame(250), undefined, 'production carrier cancels one event stream without affecting its sibling')
 assert.equal(remoteSocket.readyState, WebSocket.OPEN, 'production sibling event stream keeps its physical socket open')
@@ -453,6 +492,9 @@ console.log(JSON.stringify({
   uploadSucceeded: uploadResult.ok,
   eventStreamReady: streamResult.firstItemType === 'ready',
   eventStreamCancellationSettled: streamResult.cancellationSettled,
+  productionEventResultRPC: eventResult.value === undefined,
+  malformedEventResultRejected: malformedEventResult.status === 403,
+  staleEventClientIdRejectedByGateway: staleEventEnvelope.result.ok === false,
   productionPairingAndInfo: true,
   productionSettingsDescribeSchemaAndRedaction: true,
   officialSettingsRevisionConflictAndCAS: true,

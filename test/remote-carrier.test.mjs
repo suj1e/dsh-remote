@@ -109,6 +109,7 @@ test('production carrier requires per-device bearer auth and forwards only exact
   assert.equal(response.json().type, 'server-response')
   assert.equal(response.json().rpcId, request.rpcId)
   assert.equal(forwarded[0].endpoint, 'session/list')
+  assert.deepEqual(carrier.metadata(device).endpoints.gatewayInternalUnary, ['$events/result'])
   assert.equal(carrier.metadata(device).host.instanceId, 'd30db0f2-1c20-4629-bc20-0ecde59a65e9')
   const pairedResponse = await carrier.app.inject({
     method: 'POST',
@@ -137,6 +138,57 @@ test('production carrier requires per-device bearer auth and forwards only exact
     url: '/v1/info',
     headers: { authorization: `Bearer ${token}` },
   })).statusCode, 401)
+})
+
+test('production carrier forwards valid Gateway event results but rejects malformed internal calls', async (t) => {
+  const { carrier, token, forwarded } = await setup(t, inertGateway)
+  const request = {
+    type: 'client-request',
+    rpcId: 'event-result-001',
+    method: '$events/result',
+    payload: {
+      args: {
+        clientId: 'event-client-1',
+        eventId: 'event-request-1',
+        outcome: { kind: 'result', value: 'allowed-once' },
+      },
+    },
+  }
+
+  const unauthorized = await carrier.app.inject({
+    method: 'POST',
+    url: '/api/$events/result',
+    payload: request,
+  })
+  assert.equal(unauthorized.statusCode, 401)
+
+  const accepted = await carrier.app.inject({
+    method: 'POST',
+    url: '/api/$events/result',
+    headers: { authorization: `Bearer ${token}` },
+    payload: request,
+  })
+  assert.equal(accepted.statusCode, 200)
+  assert.equal(forwarded.length, 1)
+  assert.equal(forwarded[0].endpoint, '$events/result')
+  assert.deepEqual(forwarded[0].payload, request.payload)
+
+  const malformed = await carrier.app.inject({
+    method: 'POST',
+    url: '/api/$events/result',
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      ...request,
+      payload: {
+        args: {
+          ...request.payload.args,
+          outcome: { kind: 'result', value: 'allowed-once', extra: true },
+        },
+      },
+    },
+  })
+  assert.equal(malformed.statusCode, 403)
+  assert.equal(forwarded.length, 1, 'malformed event outcomes never reach the official Host handler')
 })
 
 test('commands execute is checked against the live official permission catalog', async (t) => {

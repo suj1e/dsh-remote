@@ -26,6 +26,7 @@ interface ContractManifest {
   contractId: string
   endpointPolicy: {
     unary: string[]
+    gatewayInternalUnary: string[]
     streams: string[]
     fetchRoutes: Array<{ method: string; path: string; contentType: string }>
   }
@@ -92,6 +93,7 @@ export interface RemoteAccessMetadata {
   host: { instanceId: string; name: string; platform: DshHostPlatform }
   endpoints: {
     unary: string[]
+    gatewayInternalUnary: string[]
     streams: string[]
     fetchRoutes: ContractManifest['endpointPolicy']['fetchRoutes']
   }
@@ -307,6 +309,7 @@ export async function createRemoteCarrier(options: RemoteCarrierOptions): Promis
     },
     endpoints: {
       unary: contract.endpointPolicy.unary,
+      gatewayInternalUnary: contract.endpointPolicy.gatewayInternalUnary,
       streams: contract.endpointPolicy.streams,
       fetchRoutes: contract.endpointPolicy.fetchRoutes,
     },

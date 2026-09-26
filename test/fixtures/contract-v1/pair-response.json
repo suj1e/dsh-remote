@@ -10,6 +10,7 @@
   },
   "endpoints": {
     "unary": ["session/list", "workspace/create", "workspaceFiles/readBytes"],
+    "gatewayInternalUnary": ["$events/result"],
     "streams": ["$events", "session/follow"],
     "fetchRoutes": [
       {

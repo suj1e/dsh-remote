@@ -1,0 +1,15 @@
+{
+  "type": "client-request",
+  "rpcId": "fixture-events-result-001",
+  "method": "$events/result",
+  "payload": {
+    "args": {
+      "clientId": "event-client-fixture-1",
+      "eventId": "event-fixture-1",
+      "outcome": {
+        "kind": "result",
+        "value": "allowed-once"
+      }
+    }
+  }
+}

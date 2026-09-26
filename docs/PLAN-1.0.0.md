@@ -102,9 +102,9 @@ M0 的契约验证使用独立临时 workspace/session，不操作用户真实�
 ### 当前实施检查点（2026-09-26）
 
 - 接入面：生产 Cordis effect 已持有 registry 与 listener 生命周期；Fastify 实现 `/v1/pair`、`/v1/info`、Bearer 设备认证、官方 shared FetchHandler unary/streaming upload，以及基于官方 Remote mux parser + Gateway `wireStream` 的 WebSocket carrier。默认拒绝 endpoint policy 与实时 permission catalog 检查保留。
-- 验证：`pnpm test` 在 DSH Electron Node 24.18.1 下 TypeScript build + 30 项测试通过，包含共享 settings/workspace-follow 样本。隔离 DSH profile 中正式插件经 production carrier 验证 pairing/info/Bearer、`settings/describe` redacted schema、workspace/session、workspace/follow baseline/upsert/新连接基线、multipart `readBytes`、原始上传和两条 `$events` ready/单流取消隔离。Host `settings/mutate` 当前 revision 成功与 stale revision conflict 另经隔离测试插件的官方 shared FetchHandler 验证；正式插件仍未开放该 endpoint。
-- 双端契约：`deviceAccess`、settings describe/CAS、Remote 与 workspace-follow fixtures 已同步到 dsh-mobile；Swift 已添加 workspace frame DTO、URLSession mux 接入、host-scoped GRDB baseline reducer 与前台订阅/UI 状态，settings schema/error fixtures 由两端同测。
-- 未退出项：尚无 iOS→Host/LiveContainer 联通；approval/question waterfall uplink、iOS 网络重连代次、默认设置对当前/新建会话的实际生效范围、settings mutation exact guard、上传取消和文件读回、TLS proxy/部署安全、负载背压、Windows/Linux、Host 设置 UI/配对二维码、发布 CI 仍未验证/实现。已通过的 macOS carrier 样例不代表三平台兼容或 M0/M2 完成。
+- 验证：`pnpm test` 在 DSH Electron Node 24.18.1 下 TypeScript build + 32 项测试通过，包含 event-result/settings/workspace-follow 样本。隔离 DSH profile 中正式插件经 production carrier 验证 pairing/info/Bearer、redacted settings schema、workspace/session、workspace-follow baseline/upsert/新连接基线、multipart `readBytes`、raw upload、两条 `$events` ready/单流取消隔离，以及 `$events/result` 当前 client generation RPC、非法结构拒绝、旧 clientId 由 Gateway 拒绝。Host `settings/mutate` 当前 revision 与 stale revision CAS 另经隔离测试插件的官方 shared FetchHandler 验证；正式插件仍关闭 settings 写入。
+- 双端契约：`deviceAccess` 的 `gatewayInternalUnary` 能力、event-result、settings describe/CAS、Remote 与 workspace-follow fixtures 已同步到 dsh-mobile；Swift decode 和两端 fixture tests 均覆盖该结果 envelope。
+- 未退出项：尚无 iOS→Host/LiveContainer 联通；真实 pending approval/question 结果、取消与重连重放、iOS 网络重连代次、默认设置对当前/新建会话的实际生效范围、settings mutation exact guard、上传取消和文件读回、TLS proxy/部署安全、负载背压、Windows/Linux、Host 设置 UI/配对二维码、发布 CI 仍未验证/实现。已通过的 macOS carrier 样例不代表三平台兼容或 M0/M2 完成。
 
 ## 6. 兼容与发布
 
