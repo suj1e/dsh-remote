@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/session/uploadFileBinary",
+  "contentType": "application/octet-stream",
+  "query": {
+    "sessionId": "session-fixture",
+    "name": "fixture.bin"
+  },
+  "bodyMode": "streaming",
+  "bodyHex": "007f80ff"
+}

@@ -1,0 +1,8 @@
+{
+  "type": "open",
+  "streamId": "fixture-events-001",
+  "endpoint": "$events",
+  "payload": {
+    "args": {}
+  }
+}

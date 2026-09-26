@@ -1,0 +1,81 @@
+{
+  "contractId": "dshr-v1-dsh-0.1.7-rc.2-2026-09-26",
+  "status": "installed-source-verified-host-roundtrip-pending",
+  "dsh": {
+    "version": "0.1.7-rc.2",
+    "build": "0.1.7-rc.2",
+    "appAsarSha256": "afb3958a1a10e1abb2f48083ffec0d270eddec668a393c59e20db4f56ade6fde"
+  },
+  "officialPackages": {
+    "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-workspace-files": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-file-upload": "0.1.7-rc.2"
+  },
+  "connection": {
+    "unary": {
+      "method": "POST",
+      "path": "/api/{namespace}/{method}",
+      "contentType": "application/json",
+      "requestType": "client-request",
+      "requestKeys": ["type", "rpcId", "method", "payload"],
+      "responseType": "server-response",
+      "responseKeys": ["type", "rpcId", "result"],
+      "officialHandler": "HostConnectionService.createSharedFetchHandler('/api')"
+    },
+    "stream": {
+      "path": "/api/remote.mux",
+      "encoding": "JSON text frames",
+      "binaryItems": false,
+      "officialParser": "@deepseek-ai/dsh-api-gateway/stream-protocol"
+    },
+    "binaryResponse": {
+      "contentType": "multipart/form-data",
+      "metadataPart": "metadata",
+      "attachmentFields": ["path", "codec", "part"],
+      "attachmentCodec": "bytes",
+      "partNamePattern": "bytes-{index}",
+      "pathBase": "server-response.result.value",
+      "failureEncoding": "server-response JSON"
+    },
+    "fileUpload": {
+      "method": "POST",
+      "contentType": "application/octet-stream",
+      "requiredQuery": ["sessionId"],
+      "optionalQuery": ["name"],
+      "body": "raw streaming bytes",
+      "cancellation": "Request.signal",
+      "routePath": "/api/session/uploadFileBinary",
+      "response": "application/json RemoteResult",
+      "routePathStatus": "installed-source-verified-host-roundtrip-pending"
+    }
+  },
+  "sourceEvidence": {
+    "kind": "read-only inspection of the installed desktop app.asar",
+    "capturedAt": "2026-09-26",
+    "hostRoundTrip": "not-run",
+    "webSocketAdapter": "not-run",
+    "sourcePaths": [
+      "dsh/node_modules/@deepseek-ai/dsh-api-gateway/README.md",
+      "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/stream-protocol.js",
+      "dsh/node_modules/@deepseek-ai/dsh-client-connection/README.md",
+      "dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js",
+      "dsh/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/http-route.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-workspace-files/README.md"
+    ]
+  },
+  "confirmedEndpointExamples": [
+    "session/list",
+    "session/create",
+    "session/follow",
+    "session/page",
+    "session/prompt",
+    "$events",
+    "$events/result",
+    "workspaceFiles/readBytes"
+  ],
+  "endpointInventoryStatus": "partial; full 1.0 allowlist remains M0 work"
+}

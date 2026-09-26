@@ -1,0 +1,17 @@
+{
+  "type": "server-response",
+  "rpcId": "fixture-rpc-bytes-001",
+  "result": {
+    "ok": true,
+    "value": {
+      "data": null
+    }
+  },
+  "attachments": [
+    {
+      "path": ["data"],
+      "codec": "bytes",
+      "part": "bytes-0"
+    }
+  ]
+}

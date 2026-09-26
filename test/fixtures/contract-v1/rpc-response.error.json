@@ -1,0 +1,14 @@
+{
+  "type": "server-response",
+  "rpcId": "fixture-rpc-001",
+  "result": {
+    "ok": false,
+    "error": {
+      "code": "gateway/bad-request",
+      "message": "redacted fixture error",
+      "details": {
+        "issues": []
+      }
+    }
+  }
+}

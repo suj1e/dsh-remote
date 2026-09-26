@@ -28,9 +28,9 @@
 | --- | --- | --- |
 | 运行时 | Node.js 24 开发/CI；TypeScript strict、ESM | 运行在官方支持的 Host 环境；M0 核对实际桌面内嵌 runtime，不能仅看开发机 node 版本 |
 | 插件框架 | 官方 @deepseek-ai/cordis、DSH 插件生命周期、home-paths 与配置机制 | 官方 peers 锁定同一 DSH build；资源由插件 effect/dispose 管理 |
-| Remote | 官方 dsh-api-gateway、typert-protocol、stream-protocol 和对应 carrier codec | 参数、lookup、授权、result/bytes、waterfall 全部复用；不复制 Gateway 实现 |
-| 外部 HTTP listener | [Fastify 5.x](https://github.com/fastify/fastify/tree/5.x) | routing、JSON Schema validation、body 限额、hooks、关闭和日志；不重复实验版手写 node:http router |
-| WebSocket | [@fastify/websocket](https://github.com/fastify/fastify-websocket) 的 Fastify 5 兼容正式版本，底层 ws | upgrade、连接管理；同步安装 message handler，再进行异步鉴权后的业务工作；payload 由官方 parser/codec 校验 |
+| Remote / HTTP carrier | 官方 dsh-api-gateway、dsh-typert-protocol、dsh-client-connection | 设备认证后调用 `connection.createSharedFetchHandler('/api')`；复用官方 endpoint dispatch、request/response envelope、multipart bytes、精确 Fetch routes；不复制 Gateway 或 Connection |
+| 外部 HTTP listener | [Fastify 5.x](https://github.com/fastify/fastify/tree/5.x) | routing、配对/设备认证 hooks、请求限额、生命周期与脱敏日志；只做 Node ↔ Web `Request/Response` 薄适配，不创建另一套 RPC protocol |
+| WebSocket | [@fastify/websocket](https://github.com/fastify/fastify-websocket) 的 Fastify 5 兼容正式版本，底层 ws | 承载官方 `/api/remote.mux` path；使用 `@deepseek-ai/dsh-api-gateway/stream-protocol` 与 Host `wireStream` adapter。精确并发/取消/关闭语义须经 M0 Host 验证，不复制 session/event 业务逻辑 |
 | 限流 | [@fastify/rate-limit](https://github.com/fastify/fastify-rate-limit) 的 Fastify 5 兼容版本 | 配对尝试、并发请求配额；不自写滑动窗口算法 |
 | CORS | @fastify/cors 的 Fastify 5 兼容版本，限主机管理 UI 所需 origin | 普通手机请求无需 CORS；不能使用任意 origin 或以 CORS 代替鉴权 |
 | 配对二维码 | qrcode 1.5.x | 只编码地址与临时配对信息，不含长期 token |
@@ -90,7 +90,7 @@ registry 的正式 schema v1 保存：随机 hostInstanceId、schemaVersion、�
 | 阶段 | dsh-remote 交付 | 与 iOS 的交接条件 |
 | --- | --- | --- |
 | M0 | 官方 Endpoint/Bytes/Event feasibility；共享样本；接入元数据 schema 定稿 | iOS 解析相同样本；业务字段无另一套自定义映射 |
-| M1 | 新插件工程、Fastify、registry、官方生命周期、Host 设置骨架、三 OS CI | listener 启停可控，包可安装，instanceId 重启稳定 |
+| M1 | 新插件工程、Fastify、官方 Connection/Gateway peers、registry、官方生命周期、Host 设置骨架、三 OS CI | listener 启停可控，官方 shared FetchHandler 可从独立 listener 调用，包可安装，instanceId 重启稳定 |
 | M2 | 配对/撤销/info、RPC/WS、工作区/会话/目录白名单与实际验证 | 三主机配对并行；工作区和会话操作经官方 Gateway |
 | M3 | follow/page/control、模型/默认配置、附件上传 carrier | 同一 requestId 重试、模型权限生效、上传可取消且归属正确 |
 | M4 | $events、审批/问题结果、pending 重放/代次取消 | 桌面/手机竞态与失效请求的联合验收 |
@@ -103,6 +103,6 @@ M0 的契约验证使用独立临时 workspace/session，不操作用户真实�
 
 [COMPATIBILITY.md](COMPATIBILITY.md)是唯一成对验证记录。每条包含 iOS tag/SHA、插件 tag/SHA、DSH build 与官方 peer 版本、contract ID、OS 与测试状态；仅源码看过的行不能写“支持”。
 
-正式版不兼容旧实验 /v1 的义务由用户取消；新正式接入仍使用 /v1 命名，且明确它是首次正式契约。需要携带二进制时复用官方格式；如果载体不可直接复用，M0 先记录具体技术缺口和最小 carrier 方案，再写规范，不能创造另一份文件业务协议。
+正式版不兼容旧实验协议的义务由用户取消。`/v1/pair` 与 `/v1/info` 是插件自己的设备接入控制面；DSH 业务数据面保留官方 `/api/{namespace}/{method}`、`/api/remote.mux`、envelope 与 multipart/Fetch-route 语义。只有 M0 验证官方 handler 不能承载的边缘能力后，才能增加最小 transport adapter，不能创造第二份业务协议。
 
 升级官方 DSH 时独立做兼容 PR，先变样本/contract ID，分别通过插件和 iOS 检查再更新支持矩阵。禁止只把 peerDependencies 改成 >= 某版本就宣称兼容。
