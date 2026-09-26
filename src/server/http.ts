@@ -10,7 +10,7 @@ import { PhoneSocket } from './ws.ts'
 import type { Config } from '../config.ts'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
-const PLUGIN_VERSION = '0.1.10'
+const PLUGIN_VERSION = '0.1.11'
 const ENTRY_ID = 'dsh-remote'
 
 /**

@@ -28,7 +28,7 @@ export interface Config {
 }
 
 /** Default mobile endpoint whitelist: session conversation surface plus the forwarded Host event stream. */
-export const DEFAULT_ALLOWED_ENDPOINTS = ['session/*', '$events/*']
+export const DEFAULT_ALLOWED_ENDPOINTS = ['session/*', '$events/*', 'workspace/*']
 
 export const Config = z.object({
   enabled: z
