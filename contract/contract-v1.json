@@ -13,7 +13,27 @@
     "@deepseek-ai/dsh-api-session-controller": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "0.1.7-rc.2",
     "@deepseek-ai/dsh-api-workspace-files": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-remotes": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-commands": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-permission-presets": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-settings": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-user-approval": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-file-upload": "0.1.7-rc.2"
+  },
+  "observedButNotExposedPackages": {
+    "@deepseek-ai/dsh-api-account-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-job-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-terminal-controller": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-cordis-host-runner": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-plugin-manager": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-schedule": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-goal": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-experimental-api-speech-to-text": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-office-to-pdf": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-message-feedback": "0.1.7-rc.2"
   },
   "connection": {
     "unary": {
@@ -30,7 +50,10 @@
       "path": "/api/remote.mux",
       "encoding": "JSON text frames",
       "binaryItems": false,
-      "officialParser": "@deepseek-ai/dsh-api-gateway/stream-protocol"
+      "officialParser": "@deepseek-ai/dsh-api-gateway/stream-protocol",
+      "officialHostCarrier": "ctx.typertGateway.wireStream.open",
+      "publicMuxServerExport": false,
+      "adapter": "Fastify WebSocket + official frame parser + Host wireStream; do not import the private RemoteStreamMuxServer"
     },
     "binaryResponse": {
       "contentType": "multipart/form-data",
@@ -61,8 +84,18 @@
     "sourcePaths": [
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/README.md",
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/stream-protocol.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/stream-server.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js",
       "dsh/node_modules/@deepseek-ai/dsh-client-connection/README.md",
       "dsh/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-remotes/lib/types/remote-events.js",
+      "dsh/node_modules/@deepseek-ai/dsh-agent-preset-registry/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-permission-presets/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-commands/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-workspace-controller/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-workspace-files/lib/typert.remote-client.js",
+      "dsh/node_modules/@deepseek-ai/dsh-api-settings-controller/README.md",
       "dsh/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/http-route.js",
       "dsh/node_modules/@deepseek-ai/dsh-api-workspace-files/README.md"
     ]
@@ -77,5 +110,93 @@
     "$events/result",
     "workspaceFiles/readBytes"
   ],
-  "endpointInventoryStatus": "partial; full 1.0 allowlist remains M0 work"
+  "endpointPolicy": {
+    "status": "source-verified-planned-allowlist-host-roundtrip-pending",
+    "unary": [
+      "agentPresets/list",
+      "agentPresets/read",
+      "agentPresets/select",
+      "commands/execute",
+      "fileReferences/list",
+      "fileUploads/upload",
+      "permissionPresets/catalog",
+      "session/attachment",
+      "session/cancel",
+      "session/create",
+      "session/fork",
+      "session/list",
+      "session/modelCatalog",
+      "session/page",
+      "session/projections",
+      "session/prompt",
+      "session/rename",
+      "session/search",
+      "session/selectModel",
+      "session/updateQueue",
+      "settings/describe",
+      "directoryPicker/list",
+      "workspace/archiveSession",
+      "workspace/create",
+      "workspace/delete",
+      "workspace/insertBefore",
+      "workspace/insertSessionBefore",
+      "workspace/pinSession",
+      "workspace/rename",
+      "workspace/unarchiveSession",
+      "workspace/unpinSession",
+      "workspaceFiles/list",
+      "workspaceFiles/read",
+      "workspaceFiles/readBytes",
+      "workspaceFiles/stat"
+    ],
+    "conditionallyAllowed": ["settings/mutate"],
+    "streams": [
+      "$events",
+      "session/control",
+      "session/follow",
+      "workspace/follow",
+      "workspaceFiles/changes"
+    ],
+    "gatewayInternalUnary": ["$events/result"],
+    "eventAllowlist": ["approval/request", "user-questions/request"],
+    "fetchRoutes": [
+      {
+        "method": "POST",
+        "path": "/api/session/uploadFileBinary",
+        "contentType": "application/octet-stream"
+      }
+    ],
+    "argumentGuards": {
+      "commands/execute": "Only the /permission command; preset argument must be present in permissionPresets/catalog.",
+      "settings/mutate": "Only exact default-setting paths confirmed by the pinned host schema; always send expectedRevision. Not enabled until a redacted Host schema fixture confirms namespace and path."
+    },
+    "notExposed": [
+      "account/*",
+      "credentials/*",
+      "terminal/*",
+      "job/*",
+      "pluginManager/*",
+      "dynamicCordisRunner/*",
+      "schedule/*",
+      "subagents/*",
+      "goals/*",
+      "speech/*",
+      "sessionFeedback/*",
+      "messageFeedback/*",
+      "officeToPdf/*",
+      "llm/*",
+      "pluginInventory/*",
+      "sessionReferenceResolver/*",
+      "pluginRegistryProbe/*",
+      "settings/update",
+      "settings/replace",
+      "settings/openSettingsDocument",
+      "workspace/initializeDefault",
+      "directoryPicker/createDirectory",
+      "directoryPicker/pick",
+      "session/openWorkspacePath",
+      "session/workspacePathApplications"
+    ]
+  },
+  "endpointInventoryStatus": "remote descriptor inventory source-verified; planned exact allowlist recorded; settings-field guard and actual Host calls remain pending"
 }

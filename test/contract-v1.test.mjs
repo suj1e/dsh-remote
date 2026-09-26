@@ -22,6 +22,31 @@ test('contract fixture pins the installed DSH source baseline without claiming a
   assert.equal(baseline.sourceEvidence.hostRoundTrip, 'not-run')
 })
 
+test('planned endpoint policy is exact, least-privilege, and guards generic mutation APIs', async () => {
+  const policy = (await contract()).endpointPolicy
+
+  assert.equal(policy.status, 'source-verified-planned-allowlist-host-roundtrip-pending')
+  assert.equal(new Set(policy.unary).size, policy.unary.length)
+  assert.equal(new Set(policy.streams).size, policy.streams.length)
+  assert.deepEqual(policy.streams, [
+    '$events',
+    'session/control',
+    'session/follow',
+    'workspace/follow',
+    'workspaceFiles/changes',
+  ])
+  assert.ok(policy.unary.includes('session/prompt'))
+  assert.ok(policy.unary.includes('workspaceFiles/readBytes'))
+  assert.ok(policy.unary.includes('commands/execute'))
+  assert.ok(policy.conditionallyAllowed.includes('settings/mutate'))
+  assert.equal(policy.argumentGuards['commands/execute'].startsWith('Only the /permission command'), true)
+  assert.equal(policy.notExposed.includes('terminal/*'), true)
+  assert.equal(policy.notExposed.includes('credentials/*'), true)
+  assert.equal(policy.notExposed.includes('account/*'), true)
+  assert.equal(policy.notExposed.includes('settings/update'), true)
+  assert.deepEqual(policy.eventAllowlist, ['approval/request', 'user-questions/request'])
+})
+
 test('unary fixture preserves the official Connection request envelope and endpoint', async () => {
   const request = await fixture('rpc-request.session-list.json')
 
@@ -45,6 +70,8 @@ test('event stream opening uses the official mux path and empty event args', asy
   const open = await fixture('stream-open.events.json')
 
   assert.equal(baseline.connection.stream.path, '/api/remote.mux')
+  assert.equal(baseline.connection.stream.officialHostCarrier, 'ctx.typertGateway.wireStream.open')
+  assert.equal(baseline.connection.stream.publicMuxServerExport, false)
   assert.equal(open.type, 'open')
   assert.equal(open.endpoint, '$events')
   assert.deepEqual(open.payload, { args: {} })

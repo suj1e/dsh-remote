@@ -74,7 +74,7 @@ HTTP 认证/限流/体积错误由接入层用 HTTP 状态表达；进入官方 
 - 一元请求使用官方 `client-request` envelope：`type/rpcId/method/payload`；path 中的 method 必须与 body 一致。成功和业务失败都是 `server-response` envelope，失败字段为官方 `code/message/details`。
 - 官方 Connection 的二进制响应为 `multipart/form-data`。`metadata` part 是带 `server-response` 的 JSON；顶层 `attachments` 项包含 result-value 相对 `path`、`codec:'bytes'`、part 名。原始 part 名为 `bytes-<index>`，接收端按 metadata 把 bytes 恢复到结果树；无附件与失败仍为 JSON。附件只用于 Remote 返回值，官方文档明确不支持二进制 stream/event。
 - `dsh-client-file-upload` 的 Host Fetch route 是 `POST /api/session/uploadFileBinary`，接受 `application/octet-stream`，以 `sessionId`（和可选 `name`）寻址，request body mode 为 streaming，并把 `Request.signal` 传给上传服务。必须通过官方 FetchHandler 路由，不转成字符串/JSON；真实 Host round-trip、取消与限额仍列为 M0 未完成项。
-- Gateway `stream-protocol` 使用 JSON text messages，mux path 是 `/api/remote.mux`；字节流不走 mux。App/插件只做设备认证、精确 allowlist 和 carrier adaptation。
+- Gateway `stream-protocol` 使用 JSON text messages，mux path 是 `/api/remote.mux`；字节流不走 mux。公开 `TypertGatewayService.wireStream.open` 提供 Host in-process carrier，但 npm exports 未公开 `RemoteStreamMuxServer`。因此插件不得深导入内部 mux；仅可用 `@fastify/websocket` + 官方 `stream-protocol` parser + `wireStream` 写一个有界的 socket carrier adapter，并由 M0 实测 cancel/end/backpressure/peer 生命周期。这属于薄 transport bridge，不复制 session/event 业务逻辑；真实验证未通过前不可声称兼容。
 
 以上是本机安装包源码/README 确认，不等于 Fastify → shared FetchHandler → 实际 DSH Host 的端到端成功。兼容识别值和带状态 fixtures 见两个仓库同内容的 `contract/` 与 `test/fixtures/contract-v1/`。在 Host round-trip 通过之前，`/api` 的产品端到端兼容与附件能力仍不得标记通过。
 
@@ -82,21 +82,17 @@ HTTP(S) baseURL 可含受支持代理前缀。由 URL 解析器拼接路径和�
 
 ## 4. Endpoint 暴露策略
 
-默认策略由产品需要的具体官方方法组成，不使用全局 *：
+唯一的计划 allowlist 是两仓库同 SHA-256 的 [`contract/contract-v1.json`](contract/contract-v1.json) 中 `endpointPolicy`。其成员来自本机 DSH 0.1.7-rc.2 的生成 `typert.remote-client.js`，按官方 descriptor 的 `mode` 分别列出 unary 与 streams；Fastify 和 WS 必须都采用默认拒绝，不得通过 namespace 通配。
 
-- session：list/create/fork/rename/search/follow/page/control/projections/prompt/cancel/updateQueue/modelCatalog/selectModel/attachment。
-- workspace：follow/create/rename/delete/insertBefore、归档/恢复/置顶/排序相关已验证方法。
-- directoryPicker/list：供远程选择已有目录。
-- workspaceFiles：list/read/stat/readBytes/changes。
-- fileUploads：官方上传所需方法/route。
-- agentPresets：list/read/select；permissionPresets/catalog。
-- commands/execute：用于官方当前会话权限设置，入口沿用官方命令授权；不能在插件重新实现 /permission。
-- settings：只暴露产品默认配置所需的 describe/update 操作，限制可写 namespace/字段。
-- 精确 $events 与 $events/result。
+边界约束：
 
-名单中的方法必须在固定官方包实际存在并通过样本校准才启用。credentials、任意插件安装、账号管理、磁盘写入/删除和未列方法不会因 namespace 相似而获准。
+- unary 覆盖产品所需的 session/workspace/file APIs、Agent preset、permission catalog 与 Gateway 内部 `$events/result`；stream 仅开放 `session/control`、`session/follow`、`workspace/follow`、`workspaceFiles/changes`、`$events`。上传同时要求官方 `fileUploads/upload` Remote 与精确 `POST /api/session/uploadFileBinary` Fetch route，保持原始流、会话归属和取消。
+- 生成描述符中存在但本产品不暴露的 terminal、account、credentials、job、plugin manager、schedule、dynamic runner 等接口明确拒绝；未知 endpoint、额外路径段及未经声明的 Fetch route 均拒绝。
+- `commands/execute` 虽在 endpoint allowlist 内，也只允许 `/permission`；preset 参数必须来自同一 Host 的 `permissionPresets/catalog`。不代理任意插件命令。
+- `settings/describe` 是官方 secrets-redacted 读取。`settings/mutate` 暂属 conditional allow：只可在固定 Host schema 脱敏 fixture 确认 namespace/path 后，使用精确路径和必填 `expectedRevision`；fixture 未确认前仍拒绝。`settings/update`、`replace` 与 credentials API 永不开放。
+- `$events` 源仅允许官方 `approval/request`、`user-questions/request` 两种 waterfall，普通 emit 事件不转发；`$events/result` 只能按当前连接代次、clientId、eventId 交给官方 Gateway。
 
-鉴权与允许列表必须同时覆盖 unary、stream 和原始文件 body，不能让 bytes route 成为旁路。过滤 settings 字段是接入权限限制；官方 revision/schema/业务校验仍交 Gateway。
+鉴权与策略同时覆盖 unary、logical stream、`$events/result` 和原始文件 body，不能让 bytes route 或 WebSocket 逻辑流成为旁路。参数层 guard 只缩小设备权限；官方 schema、revision、授权和业务校验仍交 Gateway。
 
 ## 5. 流、恢复与资源所有权
 
@@ -112,6 +108,6 @@ $events ready 的 clientId 属于该代连接，重连必须获取新值。只�
 
 ## 6. 冻结与变更
 
-M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、成对 contract ID。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
+M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、settings redacted schema 与成对 contract ID。当前 descriptor 名单和模式已从固定安装包读取；Host 调用、settings 字段与限额仍待验证。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
 
 每个正式变更同时更新本文件、共享 fixtures、iOS 对应 DTO 和兼容矩阵。只添加新 metadata 字段应允许旧正式客户端忽略；官方业务破坏性变更按新的 DSH 兼容组合发布。
