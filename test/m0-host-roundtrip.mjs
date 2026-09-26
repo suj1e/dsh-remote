@@ -72,10 +72,24 @@ assert.match(upload.headers.get('content-type') ?? '', /^application\/json/)
 const uploadResult = await upload.json()
 assert.equal(uploadResult.ok, true, 'official raw upload result')
 
+const streamOpen = JSON.parse(await readFile(new URL('./fixtures/contract-v1/stream-open.events.json', import.meta.url), 'utf8'))
+streamOpen.streamId = 'm0-host-events'
+const stream = await fetch(`${baseURL}/m0/stream/probe`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(streamOpen),
+})
+assert.equal(stream.status, 200, 'official Gateway stream probe HTTP status')
+const streamResult = await stream.json()
+assert.equal(streamResult.firstItemType, 'ready', 'official $events ready frame')
+assert.equal(streamResult.cancellationSettled, true, 'official $events cancellation settles')
+
 console.log(JSON.stringify({
   dshHomeIsolated: true,
   workspaceCreated: true,
   sessionCreated: true,
   readBytesHex: Buffer.from(read.byteParts.get('bytes-0')).toString('hex'),
   uploadSucceeded: uploadResult.ok,
+  eventStreamReady: streamResult.firstItemType === 'ready',
+  eventStreamCancellationSettled: streamResult.cancellationSettled,
 }))

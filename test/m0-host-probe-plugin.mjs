@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
+import { parseRemoteStreamClientMessage } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import Fastify from 'fastify'
 
-export const inject = ['connection']
+export const inject = ['connection', 'typertGateway']
 
 export function apply(ctx) {
   ctx.effect(async () => {
@@ -65,11 +66,57 @@ export function apply(ctx) {
       return reply.send(Buffer.from(await response.arrayBuffer()))
     })
 
+    app.post('/m0/stream/probe', async (request, reply) => {
+      const message = parseRemoteStreamClientMessage(JSON.stringify(request.body))
+      if (message.endpoint !== '$events') {
+        return reply.code(400).send({ error: 'M0 probe only opens the official $events stream.' })
+      }
+
+      const abort = new AbortController()
+      const stream = await ctx.typertGateway.wireStream.open(
+        message.endpoint,
+        message.payload,
+        { async *[Symbol.asyncIterator]() {} },
+        undefined,
+        abort.signal,
+      )
+      const iterator = stream[Symbol.asyncIterator]()
+      let timer
+      try {
+        const first = await Promise.race([
+          iterator.next(),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Timed out waiting for $events ready.')), 8_000)
+          }),
+        ])
+        clearTimeout(timer)
+        if (first.done || first.value?.type !== 'ready') {
+          abort.abort(new Error('M0 probe received an unexpected $events opening item.'))
+          return reply.code(502).send({ firstItemDone: first.done, firstItemType: first.value?.type })
+        }
+
+        const pendingNext = iterator.next()
+        abort.abort(new Error('M0 probe cancellation.'))
+        const cancellationSettled = await Promise.race([
+          pendingNext.then(() => true, () => true),
+          new Promise((resolve) => {
+            timer = setTimeout(() => resolve(false), 3_000)
+          }),
+        ])
+        clearTimeout(timer)
+        if (cancellationSettled) await iterator.return?.()
+        return reply.send({ firstItemType: first.value.type, cancellationSettled })
+      } finally {
+        clearTimeout(timer)
+        abort.abort(new Error('M0 probe finished.'))
+      }
+    })
+
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const port = new URL(address).port
     await mkdir(home, { recursive: true })
     await writeFile(join(home, 'm0-host-probe.json'), JSON.stringify({ port }), { mode: 0o600 })
-    ctx.logger('m0-host-probe').info('Isolated read-only Host probe is ready.')
+    ctx.logger('m0-host-probe').info('Isolated M0 Host probe is ready.')
 
     return async () => {
       await app.close()

@@ -1,6 +1,6 @@
 # dsh-remote 正式接入契约 v1
 
-更新：2026-09-26。状态：按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier；构建与 17 项测试在 DSH Electron 主进程 Node 24.18.1 下通过。另以独立临时 DSH_HOME 实测 Fastify → 官方 shared FetchHandler → 实际 Gateway：workspace/session 创建、readBytes multipart 字节附件往返，以及 raw streaming upload route 返回成功。此为 macOS 本机、test-only adapter 的 carrier 证据，不代表正式插件已安装运行或 iOS 已联通；WebSocket mux、取消/背压/限额和 Windows/Linux 仍未验证。
+更新：2026-09-26。状态：按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier；构建与 17 项自动化测试在 DSH Electron 主进程 Node 24.18.1 下通过。独立临时 DSH_HOME 的 test-only Fastify adapter 实测了真实 Gateway workspace/session、readBytes multipart bytes、raw streaming upload，以及官方 `$events` `ready` 与 AbortSignal 取消。此为 macOS 本机部分 carrier 证据，不代表正式插件已安装运行或 iOS 已联通；真实 WebSocket mux、物理断线与取消、背压/限额、审批/提问 waterfall 和 Windows/Linux 仍未验证。
 
 本文拥有设备接入契约；session、workspace、文件、审批等业务契约由固定版本官方 DSH Remote 拥有。[iOS 消费面与源码证据](../dsh-mobile/docs/PROTOCOL-BASELINE-1.0.0.md)记录所需业务接口，[插件计划](docs/PLAN-1.0.0.md)记录实现顺序，[兼容矩阵](docs/COMPATIBILITY.md)记录通过验证的组合。
 
@@ -74,9 +74,9 @@ HTTP 认证/限流/体积错误由接入层用 HTTP 状态表达；进入官方 
 - 一元请求使用官方 `client-request` envelope：`type/rpcId/method/payload`；path 中的 method 必须与 body 一致。成功和业务失败都是 `server-response` envelope，失败字段为官方 `code/message/details`。
 - 官方 Connection 的二进制响应为 `multipart/form-data`。`metadata` part 是带 `server-response` 的 JSON；顶层 `attachments` 项包含 result-value 相对 `path`、`codec:'bytes'`、part 名。原始 part 名为 `bytes-<index>`，接收端按 metadata 把 bytes 恢复到结果树；无附件与失败仍为 JSON。附件只用于 Remote 返回值，官方文档明确不支持二进制 stream/event。
 - `dsh-client-file-upload` 的 Host Fetch route 是 `POST /api/session/uploadFileBinary`，接受 `application/octet-stream`，以 `sessionId`（和可选 `name`）寻址，request body mode 为 streaming，并把 `Request.signal` 传给上传服务。隔离实际 Host probe 已经通过官方 FetchHandler 发送原始字节并收到成功响应；取消传播、背压、限额、上传后业务读取及正式插件集成仍列为 M0 未完成项。
-- Gateway `stream-protocol` 使用 JSON text messages，mux path 是 `/api/remote.mux`；字节流不走 mux。公开 `TypertGatewayService.wireStream.open` 提供 Host in-process carrier，但 npm exports 未公开 `RemoteStreamMuxServer`。因此插件不得深导入内部 mux；仅可用 `@fastify/websocket` + 官方 `stream-protocol` parser + `wireStream` 写一个有界的 socket carrier adapter，并由 M0 实测 cancel/end/backpressure/peer 生命周期。这属于薄 transport bridge，不复制 session/event 业务逻辑；真实验证未通过前不可声称兼容。
+- Gateway `stream-protocol` 使用 JSON text messages，mux path 是 `/api/remote.mux`；字节流不走 mux。公开 `TypertGatewayService.wireStream.open` 提供 Host in-process carrier，test-only probe 已确认实际 `$events` ready 首项及 AbortSignal 取消后挂起 `next()` 可结束；npm exports 未公开 `RemoteStreamMuxServer`。因此插件不得深导入内部 mux；正式 adapter 只能用 `@fastify/websocket` + 官方 `stream-protocol` parser + `wireStream` 实现有界的 socket carrier，并继续验证物理 WS 升级/关闭、失败 frame、背压与 Peer 生命周期。这属于薄 transport bridge，不复制 session/event 业务逻辑；未通过前不可声称 WS mux 兼容。
 
-源码/README 结论与实际探测证据分开记录。`test/run-m0-host-probe.sh` 会为每次运行创建隔离 DSH_HOME，并只在其中动态加载 test-only Fastify 插件；`test/m0-host-roundtrip.mjs` 验证实际 Gateway 创建 workspace/session、multipart `readBytes` 中 `00 7f 80 ff` 的附件还原，以及官方 streaming upload route 的成功响应。该脚本不是生产插件，不触碰现有 DSH 用户 profile，也不验证手机到主机网络链路。兼容识别值和带状态 fixtures 见两个仓库同内容的 `contract/` 与 `test/fixtures/contract-v1/`。因此只可将上述具体操作标为本机 macOS Host carrier 部分通过，不能标为产品端到端、WS mux 或跨平台兼容通过。
+源码/README 结论与实际探测证据分开记录。`test/run-m0-host-probe.sh` 会为每次运行创建隔离 DSH_HOME，并只在其中动态加载 test-only Fastify 插件；`test/m0-host-roundtrip.mjs` 验证实际 Gateway 创建 workspace/session、multipart `readBytes` 中 `00 7f 80 ff` 的附件还原、官方 streaming upload route 成功响应，以及 `$events` 首个 ready 项和 abort 后等待中的 `next()` 收敛。该脚本不是生产插件，不触碰现有 DSH 用户 profile，也不验证手机到主机网络链路或 WebSocket framing。兼容识别值和带状态 fixtures 见两个仓库同内容的 `contract/` 与 `test/fixtures/contract-v1/`。因此只可将上述具体操作标为本机 macOS Host in-process carrier 部分通过，不能标为产品端到端、WS mux 或跨平台兼容通过。
 
 HTTP(S) baseURL 可含受支持代理前缀。由 URL 解析器拼接路径和切换 ws/wss，不能字符串硬拼。TLS 可在反向代理终止；传入代理头仅在显式配置可信代理时接受。客户端不忽略 TLS 错误，不向跨源 redirect 转交 token。
 
@@ -108,6 +108,6 @@ $events ready 的 clientId 属于该代连接，重连必须获取新值。只�
 
 ## 6. 冻结与变更
 
-M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、settings redacted schema 与成对 contract ID。当前 descriptor 名单和模式已从固定安装包读取；部分真实 Host unary/bytes/upload carrier 已由隔离 probe 验证，mux、取消/背压、settings 字段、限额、其余业务行为仍待验证。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
+M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、settings redacted schema 与成对 contract ID。当前 descriptor 名单和模式已从固定安装包读取；部分真实 Host unary/bytes/upload 与 Gateway in-process stream 取消已由隔离 probe 验证，物理 mux、审批/提问事件交互、背压、settings 字段、限额及其余业务行为仍待验证。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
 
 每个正式变更同时更新本文件、共享 fixtures、iOS 对应 DTO 和兼容矩阵。只添加新 metadata 字段应允许旧正式客户端忽略；官方业务破坏性变更按新的 DSH 兼容组合发布。
