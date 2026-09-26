@@ -64,6 +64,35 @@ async function remoteRpc(endpoint, args) {
   return { value: envelope.result.value, attachments: envelope.attachments ?? [], byteParts }
 }
 
+const settingsDescription = await remoteRpc('settings/describe', {})
+assert.equal(typeof settingsDescription.value.writable, 'boolean')
+assert.equal(typeof settingsDescription.value.hasDocument, 'boolean')
+assert.ok(Array.isArray(settingsDescription.value.namespaces))
+const settingsNamespace = (name) => settingsDescription.value.namespaces.find((namespace) => namespace.ns === name)
+const defaultModelSettings = settingsNamespace('agent-default-model')
+const permissionSettings = settingsNamespace('permission')
+const secretSettings = settingsNamespace('web-search-deepseek')
+assert.ok(defaultModelSettings, 'Host exposes its default agent model namespace')
+assert.ok(permissionSettings, 'Host exposes its default permission namespace')
+assert.equal(defaultModelSettings.applies, 'live')
+const modelFields = defaultModelSettings.schema.refs[defaultModelSettings.schema.uid].dict
+assert.deepEqual(Object.keys(modelFields).sort(), ['model', 'provider', 'reasoningEffort'])
+for (const fieldName of ['provider', 'model']) {
+  const field = defaultModelSettings.schema.refs[modelFields[fieldName]]
+  assert.equal(field.type, 'string')
+  assert.equal(field.meta.required, true)
+}
+assert.equal(defaultModelSettings.schema.refs[modelFields.reasoningEffort].type, 'string')
+assert.equal(defaultModelSettings.schema.refs[modelFields.reasoningEffort].meta.required, undefined)
+const permissionFields = permissionSettings.schema.refs[permissionSettings.schema.uid].dict
+assert.deepEqual(Object.keys(permissionFields), ['defaultPreset'])
+assert.equal(permissionSettings.schema.refs[permissionFields.defaultPreset].type, 'string')
+assert.equal(permissionSettings.schema.refs[permissionFields.defaultPreset].meta.required, undefined)
+assert.ok(secretSettings?.secrets.length, 'Host schema includes a redacted secret descriptor')
+assert.ok(secretSettings.secrets.every((secret) => (
+  Object.keys(secret).sort().join(',') === 'path,set' && Array.isArray(secret.path) && typeof secret.set === 'boolean'
+)))
+
 async function rpc(endpoint, args) {
   const rpcId = `m0-host-${++rpcSequence}`
   const response = await fetch(`${baseURL}/api/${endpoint}`, {
@@ -97,6 +126,50 @@ async function rpc(endpoint, args) {
   assert.equal(envelope.result.ok, true, `${endpoint} official Remote result`)
   return { value: envelope.result.value, attachments: envelope.attachments ?? [], byteParts }
 }
+
+async function rawHostRpcResult(endpoint, args) {
+  const rpcId = `m0-host-${++rpcSequence}`
+  const response = await fetch(`${baseURL}/api/${endpoint}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-request',
+      rpcId,
+      method: endpoint,
+      payload: { args },
+    }),
+  })
+  assert.equal(response.status, 200, `${endpoint} HTTP status`)
+  const envelope = await response.json()
+  assert.equal(envelope.type, 'server-response')
+  assert.equal(envelope.rpcId, rpcId)
+  return envelope.result
+}
+
+const staleSettingsMutation = await rawHostRpcResult('settings/mutate', {
+  ns: defaultModelSettings.ns,
+  ops: [],
+  expectedRevision: defaultModelSettings.revision + 1,
+})
+assert.equal(staleSettingsMutation.ok, false, 'Host rejects a stale settings namespace revision')
+assert.equal(typeof staleSettingsMutation.error?.code, 'string')
+const unchangedSettingsDescription = await remoteRpc('settings/describe', {})
+const unchangedModelSettings = unchangedSettingsDescription.value.namespaces.find((namespace) => namespace.ns === defaultModelSettings.ns)
+assert.equal(unchangedModelSettings.revision, defaultModelSettings.revision)
+assert.deepEqual(unchangedModelSettings.value, defaultModelSettings.value)
+
+const idempotentSettingsMutation = await rawHostRpcResult('settings/mutate', {
+  ns: defaultModelSettings.ns,
+  ops: [{ op: 'set', path: ['model'], value: defaultModelSettings.value.model }],
+  expectedRevision: defaultModelSettings.revision,
+})
+assert.equal(idempotentSettingsMutation.ok, true, 'Host accepts a valid CAS mutation at the current revision')
+assert.equal(idempotentSettingsMutation.value.ns, defaultModelSettings.ns)
+assert.deepEqual(idempotentSettingsMutation.value.value, defaultModelSettings.value)
+assert.equal(idempotentSettingsMutation.value.revision, defaultModelSettings.revision)
+const afterSettingsMutation = await remoteRpc('settings/describe', {})
+const resultingModelSettings = afterSettingsMutation.value.namespaces.find((namespace) => namespace.ns === defaultModelSettings.ns)
+assert.equal(resultingModelSettings.revision, idempotentSettingsMutation.value.revision)
 
 const workspace = await rpc('workspace/create', {
   request: { path: join(home, 'm0-workspace') },
@@ -381,6 +454,11 @@ console.log(JSON.stringify({
   eventStreamReady: streamResult.firstItemType === 'ready',
   eventStreamCancellationSettled: streamResult.cancellationSettled,
   productionPairingAndInfo: true,
+  productionSettingsDescribeSchemaAndRedaction: true,
+  officialSettingsRevisionConflictAndCAS: true,
+  settingsRevisionConflictCode: staleSettingsMutation.error.code,
+  settingsRevisionConflictDetails: staleSettingsMutation.error.details,
+  settingsCurrentRevisionAccepted: idempotentSettingsMutation.value.revision,
   productionWorkspaceFollowBaselineAndUpsert: true,
   productionWorkspaceFollowReconnectBaseline: true,
   productionReadBytesHex: Buffer.from(remoteRead.byteParts.get('bytes-0')).toString('hex'),

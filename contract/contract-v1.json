@@ -115,7 +115,7 @@
   "sourceEvidence": {
     "kind": "read-only inspection of the installed desktop app.asar",
     "capturedAt": "2026-09-26",
-    "hostRoundTrip": "isolated-production-plugin-carrier-on-macos",
+    "hostRoundTrip": "isolated-production-plugin-carrier-and-official-host-handler-on-macos",
     "webSocketAdapter": "production-carrier-and-real-gateway-events-and-workspace-follow-reconnect-on-macos",
     "sourcePaths": [
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/README.md",
@@ -133,6 +133,7 @@
       "dsh/node_modules/@deepseek-ai/dsh-api-workspace-controller/lib/typert.remote-client.js",
       "dsh/node_modules/@deepseek-ai/dsh-api-workspace-files/lib/typert.remote-client.js",
       "dsh/node_modules/@deepseek-ai/dsh-api-settings-controller/README.md",
+      "dsh/node_modules/@deepseek-ai/dsh-api-settings-controller/lib/typert.remote-client.js",
       "dsh/node_modules/@deepseek-ai/dsh-client-file-upload/lib/types/http-route.js",
       "dsh/node_modules/@deepseek-ai/dsh-api-workspace-files/README.md"
     ]
@@ -205,7 +206,7 @@
     ],
     "argumentGuards": {
       "commands/execute": "Only the /permission command; preset argument must be present in permissionPresets/catalog.",
-      "settings/mutate": "Only exact default-setting paths confirmed by the pinned host schema; always send expectedRevision. Not enabled until a redacted Host schema fixture confirms namespace and path."
+      "settings/mutate": "Only exact default-setting paths confirmed by the pinned host schema; always send expectedRevision and validate model/permission catalog values. Still denied until the production field guard is implemented and tested."
     },
     "notExposed": [
       "account/*",
@@ -235,14 +236,14 @@
       "session/workspacePathApplications"
     ]
   },
-  "endpointInventoryStatus": "remote descriptor inventory source-verified; selected workspace/session/readBytes calls and workspace-follow baseline/upsert host-roundtrip verified; remaining allowlist calls and settings-field guard pending",
+  "endpointInventoryStatus": "remote descriptor inventory source-verified; selected workspace/session/readBytes, workspace-follow recovery, and settings describe/CAS host checks verified; production settings-field guard and remaining allowlist calls pending",
   "hostRoundTripEvidence": {
-    "status": "isolated-production-plugin-carrier-verified-on-macos-only",
+    "status": "isolated-production-plugin-carrier-and-official-host-handler-verified-on-macos-only",
     "dshVersion": "0.1.7-rc.2",
-    "testedEndpoints": ["workspace/create", "session/create", "workspace/rename", "workspace/follow", "workspaceFiles/readBytes"],
+    "testedEndpoints": ["settings/describe", "settings/mutate", "workspace/create", "session/create", "workspace/rename", "workspace/follow", "workspaceFiles/readBytes"],
     "testedFetchRoutes": ["POST /api/session/uploadFileBinary"],
     "testedStreams": ["$events", "workspace/follow"],
-    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "workspace-follow-baseline-and-rename-increment", "workspace-follow-baseline-after-new-connection", "dual-logical-stream-cancellation-isolation"],
-    "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no iOS network-reconnect generation test", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
+    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "secrets-redacted-settings-describe-schema", "settings-revision-conflict-and-current-revision-cas", "workspace-follow-baseline-and-rename-increment", "workspace-follow-baseline-after-new-connection", "dual-logical-stream-cancellation-isolation"],
+    "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no iOS network-reconnect generation test", "no default-setting current-versus-next-session effect test", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
   }
 }

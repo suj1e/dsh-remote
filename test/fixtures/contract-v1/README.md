@@ -6,4 +6,6 @@ The binary cases store an edge-case byte vector as hex beside the official Conne
 
 `stream-open.workspace-follow.json` and `workspace-follow.*.json` pin the official workspace-follow open payload, complete baseline, and each ordered increment shape. These fixtures are shared byte-for-byte with the iOS repository; isolated production-carrier baseline/upsert and fresh-connection baseline evidence is tracked separately from these synthetic samples.
 
+`rpc-response.settings-describe.json` pins the selected secrets-free default-model and permission namespace views. The settings mutation request/result samples preserve the official `ns`/`ops`/`expectedRevision` form and `settings/conflict` details. Their synthetic values do not enable the production plugin's settings write policy; the real Host probe separately verifies a redacted descriptor and CAS success/conflict in a disposable profile.
+
 Run the fixture-shape checks with `node --test test/contract-v1.test.mjs`. These tests validate only the committed examples; run `test/run-m0-host-probe.sh` for the isolated real-Host checks.

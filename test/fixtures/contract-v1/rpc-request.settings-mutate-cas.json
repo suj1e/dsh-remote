@@ -1,0 +1,14 @@
+{
+  "type": "client-request",
+  "rpcId": "fixture-settings-mutate-cas-001",
+  "method": "settings/mutate",
+  "payload": {
+    "args": {
+      "ns": "agent-default-model",
+      "ops": [
+        { "op": "set", "path": ["model"], "value": "deepseek-flash" }
+      ],
+      "expectedRevision": 0
+    }
+  }
+}

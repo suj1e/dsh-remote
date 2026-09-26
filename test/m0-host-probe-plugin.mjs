@@ -114,6 +114,8 @@ export function apply(ctx) {
       '/api/workspace/create',
       '/api/session/create',
       '/api/workspaceFiles/readBytes',
+      '/api/settings/describe',
+      '/api/settings/mutate',
     ]) app.post(path, forwardJSON)
 
     app.addContentTypeParser('application/octet-stream', (request, payload, done) => {

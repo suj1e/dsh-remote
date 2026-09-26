@@ -1,0 +1,29 @@
+{
+  "type": "server-response",
+  "rpcId": "fixture-settings-mutate-cas-001",
+  "result": {
+    "ok": true,
+    "value": {
+      "ns": "agent-default-model",
+      "schema": {
+        "uid": 3643,
+        "refs": {
+          "3640": { "type": "string", "meta": { "required": true } },
+          "3641": { "type": "string", "meta": { "required": true } },
+          "3642": { "type": "string", "meta": {} },
+          "3643": {
+            "type": "object",
+            "meta": { "default": {} },
+            "dict": { "provider": 3640, "model": 3641, "reasoningEffort": 3642 }
+          }
+        }
+      },
+      "value": { "provider": "deepseek-official", "model": "deepseek-flash" },
+      "base": { "provider": "deepseek-official", "model": "deepseek-flash" },
+      "user": {},
+      "applies": "live",
+      "secrets": [],
+      "revision": 0
+    }
+  }
+}

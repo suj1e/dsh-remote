@@ -1,6 +1,6 @@
 # dsh-remote 正式接入契约 v1
 
-更新：2026-09-26。状态：按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier；`pnpm test`（TypeScript build + 27 tests）通过。正式 `dsh-remote` 插件已在独立临时 DSH_HOME 中实际加载，并通过生产配对/设备鉴权、官方 Gateway workspace/session、`readBytes` multipart bytes、raw streaming upload，以及正式 `/api/remote.mux` 上双 `$events` 逻辑流隔离取消。证据仅覆盖 macOS 本机 carrier，不代表 iOS 已联通；事件 uplink waterfall、上传后读回、Windows/Linux、外部 HTTPS 代理和负载/背压仍未验证。
+更新：2026-09-26。状态：按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier；DSH Electron Node 24.18.1 下 `pnpm test`（TypeScript build + 30 tests）通过。正式 `dsh-remote` 插件已在独立临时 DSH_HOME 中实际加载，并通过生产配对/设备鉴权、official `settings/describe` secrets-redacted schema、workspace/session、`workspace/follow` 重新连接基线、`readBytes` multipart bytes、raw streaming upload，以及正式 `/api/remote.mux` 上双 `$events` 逻辑流隔离取消。Host 原生 `settings/mutate` 的当前/旧 revision CAS 在同一隔离 profile 经官方 shared FetchHandler 直接验证；正式插件仍默认拒绝该写端点。证据仅覆盖 macOS，不代表 iOS 已联通；默认设置的当前/后续会话影响、事件 uplink waterfall、上传后读回、Windows/Linux、外部 HTTPS 代理和负载/背压仍未验证。
 
 本文拥有设备接入契约；session、workspace、文件、审批等业务契约由固定版本官方 DSH Remote 拥有。[iOS 消费面与源码证据](../dsh-mobile/docs/PROTOCOL-BASELINE-1.0.0.md)记录所需业务接口，[插件计划](docs/PLAN-1.0.0.md)记录实现顺序，[兼容矩阵](docs/COMPATIBILITY.md)记录通过验证的组合。
 
@@ -89,7 +89,7 @@ HTTP(S) baseURL 可含受支持代理前缀。由 URL 解析器拼接路径和�
 - unary 覆盖产品所需的 session/workspace/file APIs、Agent preset、permission catalog 与 Gateway 内部 `$events/result`；stream 仅开放 `session/control`、`session/follow`、`workspace/follow`、`workspaceFiles/changes`、`$events`。上传同时要求官方 `fileUploads/upload` Remote 与精确 `POST /api/session/uploadFileBinary` Fetch route，保持原始流、会话归属和取消。
 - 生成描述符中存在但本产品不暴露的 terminal、account、credentials、job、plugin manager、schedule、dynamic runner 等接口明确拒绝；未知 endpoint、额外路径段及未经声明的 Fetch route 均拒绝。
 - `commands/execute` 虽在 endpoint allowlist 内，也只允许 `/permission`；preset 参数必须来自同一 Host 的 `permissionPresets/catalog`。不代理任意插件命令。
-- `settings/describe` 是官方 secrets-redacted 读取。`settings/mutate` 暂属 conditional allow：只可在固定 Host schema 脱敏 fixture 确认 namespace/path 后，使用精确路径和必填 `expectedRevision`；fixture 未确认前仍拒绝。`settings/update`、`replace` 与 credentials API 永不开放。
+- `settings/describe` 是官方 secrets-redacted 读取。隔离 Host 实测的 `agent-default-model` schema 只有 `provider`、`model`、可选 `reasoningEffort`，`permission` schema 只有可选 `defaultPreset`；`applies` 为 `live`，每个 namespace 有独立 revision。官方 `settings/mutate` 参数是顶层 `ns`、`ops`、`expectedRevision`（官方 codec 允许省略 revision，但产品必须发送）；实际 Host 对过期 revision 返回 `settings/conflict`，details 含 `ns/expected/actual`，当前 revision 的已验证操作成功。该成功/冲突通过隔离测试插件中的 loopback route 直接调用官方 shared FetchHandler，不代表正式 dsh-remote 暴露写能力。正式插件仍默认拒绝 `settings/mutate`，直到实现并测试 exact namespace/path、model catalog/permission catalog 值约束和必填 CAS guard；不能因 schema fixture 已有就放开任意 `ops`。`settings/update`、`replace` 与 credentials API 永不开放。
 - `$events` 源仅允许官方 `approval/request`、`user-questions/request` 两种 waterfall，普通 emit 事件不转发；`$events/result` 只能按当前连接代次、clientId、eventId 交给官方 Gateway。
 
 鉴权与策略同时覆盖 unary、logical stream、`$events/result` 和原始文件 body，不能让 bytes route 或 WebSocket 逻辑流成为旁路。参数层 guard 只缩小设备权限；官方 schema、revision、授权和业务校验仍交 Gateway。
@@ -108,6 +108,6 @@ $events ready 的 clientId 属于该代连接，重连必须获取新值。只�
 
 ## 6. 冻结与变更
 
-设备接入元数据、限额和 pair/info JSON shape 已写入双仓同一 contract 与 fixtures。M0 仍未退出：需继续固定业务方法参数、取消/错误样本、settings redacted schema；正式 carrier 上的 `$events` ready/cancel 与 `workspace/follow` baseline/upsert/新连接基线已过，但 approval/question 结果 uplink、iOS 网络断线换代与 pending 语义、上传取消、Windows/Linux、外部 TLS/代理和负载背压尚待验证。当前只把 `hostRoundTripEvidence` 中逐项列出的真实 Host 能力标为通过，不能将整个 allowlist 或 M0 声称完成。
+设备接入元数据、限额和 pair/info JSON shape 已写入双仓同一 contract 与 fixtures。M0 仍未退出：需继续固定业务方法参数、取消/错误样本、默认设置对新建/现有会话的实际生效范围，以及 production settings mutation guard；正式 carrier 上的 `$events` ready/cancel 与 `workspace/follow` baseline/upsert/新连接基线已过，但 approval/question 结果 uplink、iOS 网络断线换代与 pending 语义、上传取消、Windows/Linux、外部 TLS/代理和负载背压尚待验证。当前只把 `hostRoundTripEvidence` 中逐项列出的真实 Host 能力标为通过，不能将整个 allowlist 或 M0 声称完成。
 
 每个正式变更同时更新本文件、共享 fixtures、iOS 对应 DTO 和兼容矩阵。只添加新 metadata 字段应允许旧正式客户端忽略；官方业务破坏性变更按新的 DSH 兼容组合发布。

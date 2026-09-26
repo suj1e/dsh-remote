@@ -1,0 +1,12 @@
+{
+  "type": "client-request",
+  "rpcId": "fixture-settings-mutate-stale-001",
+  "method": "settings/mutate",
+  "payload": {
+    "args": {
+      "ns": "agent-default-model",
+      "ops": [],
+      "expectedRevision": 1
+    }
+  }
+}

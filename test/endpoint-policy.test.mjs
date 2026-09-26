@@ -57,7 +57,7 @@ test('restricts commands/execute to a catalogued /permission command without att
   }), { allowed: false, denial: 'command-not-allowed' })
 })
 
-test('settings mutation stays closed until the pinned host schema has an allowlisted fixture', () => {
+test('settings mutation stays closed until exact paths and catalog guards are implemented', () => {
   assert.equal(authorize('/api/settings/describe').allowed, true)
   assert.deepEqual(authorize('/api/settings/mutate'), {
     allowed: false,

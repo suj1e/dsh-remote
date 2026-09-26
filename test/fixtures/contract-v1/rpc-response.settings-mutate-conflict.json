@@ -1,0 +1,12 @@
+{
+  "type": "server-response",
+  "rpcId": "fixture-settings-mutate-stale-001",
+  "result": {
+    "ok": false,
+    "error": {
+      "code": "settings/conflict",
+      "message": "redacted settings revision conflict",
+      "details": { "ns": "agent-default-model", "expected": 1, "actual": 0 }
+    }
+  }
+}

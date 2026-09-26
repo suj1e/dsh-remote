@@ -19,14 +19,16 @@ test('contract fixture pins the installed DSH source baseline and bounded real-H
 
   assert.equal(baseline.contractId, 'dshr-v1-dsh-0.1.7-rc.2-2026-09-26')
   assert.equal(baseline.dsh.appAsarSha256, 'afb3958a1a10e1abb2f48083ffec0d270eddec668a393c59e20db4f56ade6fde')
-  assert.equal(baseline.sourceEvidence.hostRoundTrip, 'isolated-production-plugin-carrier-on-macos')
+  assert.equal(baseline.sourceEvidence.hostRoundTrip, 'isolated-production-plugin-carrier-and-official-host-handler-on-macos')
   assert.deepEqual(baseline.hostRoundTripEvidence.testedEndpoints, [
-    'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
+    'settings/describe', 'settings/mutate', 'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
   ])
   assert.deepEqual(baseline.hostRoundTripEvidence.testedStreams, ['$events', 'workspace/follow'])
+  assert.ok(baseline.hostRoundTripEvidence.additionalChecks.includes('settings-revision-conflict-and-current-revision-cas'))
   assert.ok(baseline.hostRoundTripEvidence.additionalChecks.includes('workspace-follow-baseline-after-new-connection'))
   assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no Windows/Linux Host'))
   assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no iOS network-reconnect generation test'))
+  assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no default-setting current-versus-next-session effect test'))
 })
 
 test('planned endpoint policy is exact, least-privilege, and guards generic mutation APIs', async () => {
@@ -101,6 +103,55 @@ test('session list fixture preserves the official cold-safe summary fields', asy
       values: { title: 'Fixture session' },
     },
   })
+})
+
+test('settings fixtures pin redacted default namespaces and revision-aware mutation', async () => {
+  const described = await fixture('rpc-response.settings-describe.json')
+  const mutation = await fixture('rpc-request.settings-mutate-cas.json')
+  const staleMutation = await fixture('rpc-request.settings-mutate-stale.json')
+  const conflict = await fixture('rpc-response.settings-mutate-conflict.json')
+  const success = await fixture('rpc-response.settings-mutate-success.json')
+
+  assert.equal(described.type, 'server-response')
+  assert.equal(described.result.ok, true)
+  assert.equal(described.result.value.writable, true)
+  const namespaces = new Map(described.result.value.namespaces.map((namespace) => [namespace.ns, namespace]))
+  const defaultModel = namespaces.get('agent-default-model')
+  const permission = namespaces.get('permission')
+  const modelFields = defaultModel.schema.refs[defaultModel.schema.uid].dict
+  assert.deepEqual(Object.keys(modelFields).sort(), [
+    'model', 'provider', 'reasoningEffort',
+  ])
+  for (const fieldName of ['provider', 'model']) {
+    const field = defaultModel.schema.refs[modelFields[fieldName]]
+    assert.equal(field.type, 'string')
+    assert.equal(field.meta.required, true)
+  }
+  assert.equal(defaultModel.schema.refs[modelFields.reasoningEffort].type, 'string')
+  assert.equal(defaultModel.schema.refs[modelFields.reasoningEffort].meta.required, undefined)
+  assert.deepEqual(defaultModel.value, { provider: 'deepseek-official', model: 'deepseek-flash' })
+  assert.equal(defaultModel.applies, 'live')
+  assert.equal(defaultModel.revision, 0)
+  const permissionFields = permission.schema.refs[permission.schema.uid].dict
+  assert.deepEqual(Object.keys(permissionFields), ['defaultPreset'])
+  assert.equal(permission.schema.refs[permissionFields.defaultPreset].type, 'string')
+  assert.equal(permission.schema.refs[permissionFields.defaultPreset].meta.required, undefined)
+  assert.equal(permission.applies, 'live')
+
+  assert.equal(mutation.method, 'settings/mutate')
+  assert.deepEqual(mutation.payload.args, {
+    ns: 'agent-default-model',
+    ops: [{ op: 'set', path: ['model'], value: 'deepseek-flash' }],
+    expectedRevision: 0,
+  })
+  assert.equal(staleMutation.payload.args.expectedRevision, 1)
+  assert.equal(conflict.result.ok, false)
+  assert.equal(conflict.result.error.code, 'settings/conflict')
+  assert.deepEqual(conflict.result.error.details, { ns: 'agent-default-model', expected: 1, actual: 0 })
+  assert.equal(success.result.ok, true)
+  assert.equal(success.result.value.ns, 'agent-default-model')
+  assert.equal(success.result.value.revision, 0)
+  assert.deepEqual(success.result.value.value, defaultModel.value)
 })
 
 test('workspace follow fixtures pin the official baseline and every ordered increment', async () => {
