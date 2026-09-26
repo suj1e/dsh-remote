@@ -133,7 +133,7 @@ Upgrade 请求带 `Authorization: Bearer <token>`，未认证直接被拒（无�
 2. 之后是增量 `{type:"event", event:{...}}` 帧（消息、工具调用、助手流片段等）
 3. 断线重连后重新 open 同一 `session/follow`，以最新快照恢复
 
-**帧结构（✓实测）**：首帧 `{type:"snapshot", header:{version,id,createdAt,cwd,isSeeded,delegationDepth,agentPreset}, cursor, records:[], hasMore, projections}`；之后每条 `{type:"event", event:{type, seq, time, data, surfaceOp?}}`。事件类型实测样本：
+**帧结构（✓实测）**：首帧 `{type:"snapshot", header:{version,id,createdAt,cwd,isSeeded,delegationDepth,agentPreset}, cursor, records, hasMore, projections}`，其中 `records` 是**事件包装数组**（与增量帧同构）：`[{type:"event", event:{...}}, ...]`；之后每条增量 `{type:"event", event:{type, seq, time, data, surfaceOp?}}`。事件类型实测样本：
 
 | event.type | data 要点 |
 |---|---|
