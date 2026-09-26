@@ -14,4 +14,4 @@ DSH Mobile 的配套主机插件，为 macOS、Windows、Linux 上的 DeepSeek H
 
 技术基线为 Cordis / 官方 DSH Gateway、Node.js、TypeScript、Fastify 5 及其成熟插件。业务能力直接使用官方 Remote；系统推送与云服务不在 1.0 范围。
 
-使用 DSH 自带的 Node 24.21.0 与 pnpm 11.7，在仓库执行 `pnpm install --ignore-scripts`、`pnpm test` 可安装锁定依赖、类型构建并运行当前测试。当前测试不要求安装插件或启动 listener。发布记录必须同时指明兼容的 DSH Desktop/Host、插件和 iOS 版本；未通过三平台真实 Host 往返前，不宣称主机兼容。
+插件 Host 使用 DSH Electron 主进程 Node 24.18.1（`runtime/versions.json` 同样标注 24.18.1）；本机已验证 `pnpm test` 在该 Node 版本与 pnpm 11.9.0 下通过。安装包的 `primary-runtime/runtime.json` 另标注 Node 24.21.0，但用途与插件主进程关系未确认，不以它作为插件运行时证据。执行 `pnpm install --ignore-scripts`、`pnpm test` 可安装锁定依赖、类型构建并运行当前测试；这些测试不要求安装插件或启动 listener。发布记录必须同时指明兼容的 DSH Desktop/Host、插件和 iOS 版本；未通过三平台真实 Host 往返前，不宣称主机兼容。
