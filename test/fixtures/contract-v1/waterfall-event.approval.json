@@ -1,0 +1,11 @@
+{
+  "type": "waterfall",
+  "event": "approval/request",
+  "eventId": "event-fixture-1",
+  "agentId": "agent-fixture-1",
+  "request": {
+    "toolName": "m0-probe-tool",
+    "callId": "m0-probe-call",
+    "reason": "Approve the isolated M0 protocol probe."
+  }
+}

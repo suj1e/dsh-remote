@@ -73,6 +73,25 @@ test('event results use the pinned Gateway unary endpoint and generation-scoped 
   assert.deepEqual(args.outcome, { kind: 'result', value: 'allowed-once' })
 })
 
+test('official approval and user-question waterfall fixtures exclude Host-only Agent and signal fields', async () => {
+  const approval = await fixture('waterfall-event.approval.json')
+  const question = await fixture('waterfall-event.user-question.json')
+
+  for (const frame of [approval, question]) {
+    assert.deepEqual(Object.keys(frame).sort(), ['agentId', 'event', 'eventId', 'request', 'type'])
+    assert.equal(frame.type, 'waterfall')
+    assert.equal(frame.agentId, 'agent-fixture-1')
+    assert.equal(frame.eventId, 'event-fixture-1')
+    assert.equal('agent' in frame.request, false)
+    assert.equal('signal' in frame.request, false)
+  }
+  assert.equal(approval.event, 'approval/request')
+  assert.deepEqual(Object.keys(approval.request).sort(), ['callId', 'reason', 'toolName'])
+  assert.equal(question.event, 'user-questions/request')
+  assert.deepEqual(Object.keys(question.request), ['questions'])
+  assert.equal(question.request.questions[0].multiSelect, false)
+})
+
 test('device pairing fixtures pin access metadata shape and keep the token pair-only', async () => {
   const baseline = await contract()
   const request = await fixture('pair-request.json')

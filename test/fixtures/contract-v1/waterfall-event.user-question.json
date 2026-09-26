@@ -1,0 +1,20 @@
+{
+  "type": "waterfall",
+  "event": "user-questions/request",
+  "eventId": "event-fixture-1",
+  "agentId": "agent-fixture-1",
+  "request": {
+    "questions": [
+      {
+        "id": "question-fixture-1",
+        "header": "M0 probe",
+        "question": "Choose the isolated probe result.",
+        "options": [
+          { "label": "Continue" },
+          { "label": "Stop" }
+        ],
+        "multiSelect": false
+      }
+    ]
+  }
+}

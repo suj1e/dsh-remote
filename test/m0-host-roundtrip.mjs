@@ -64,6 +64,84 @@ async function remoteRpc(endpoint, args) {
   return { value: envelope.result.value, attachments: envelope.attachments ?? [], byteParts }
 }
 
+async function startHostQuestion(questionId) {
+  const response = await fetch(`${baseURL}/m0/events/question-runs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      questions: [{
+        id: questionId,
+        header: 'M0 probe',
+        question: 'Choose the isolated probe result.',
+        options: [{ label: 'Continue' }, { label: 'Stop' }],
+        multiSelect: false,
+      }],
+    }),
+  })
+  assert.equal(response.status, 202, 'the official Host Agent accepted a pending user question')
+  return response.json()
+}
+
+async function readHostQuestion(runId) {
+  const response = await fetch(`${baseURL}/m0/events/question-runs/${runId}`)
+  if (response.status === 202) return { status: 'pending' }
+  assert.equal(response.status, 200)
+  return response.json()
+}
+
+async function waitForHostQuestion(runId) {
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    const state = await readHostQuestion(runId)
+    if (state.status === 'settled') return state
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.fail(`official Host question ${runId} did not settle`)
+}
+
+async function disposeHostQuestion(runId) {
+  const response = await fetch(`${baseURL}/m0/events/question-runs/${runId}`, { method: 'DELETE' })
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).disposed, true)
+}
+
+async function startHostApproval() {
+  const response = await fetch(`${baseURL}/m0/events/approval-runs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(response.status, 202, 'the official Host ApprovalService accepted an isolated request')
+  return response.json()
+}
+
+async function readHostApproval(runId) {
+  const response = await fetch(`${baseURL}/m0/events/approval-runs/${runId}`)
+  if (response.status === 202) return { status: 'pending' }
+  assert.equal(response.status, 200)
+  return response.json()
+}
+
+async function waitForHostApproval(runId) {
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    const state = await readHostApproval(runId)
+    if (state.status === 'settled') return state
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  assert.fail(`official Host approval ${runId} did not settle`)
+}
+
+async function disposeHostApproval(runId) {
+  const response = await fetch(`${baseURL}/m0/events/approval-runs/${runId}`, { method: 'DELETE' })
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).disposed, true)
+}
+
+async function submitEventResult(clientId, eventId, outcome) {
+  return remoteRpc('$events/result', { clientId, eventId, outcome })
+}
+
 const settingsDescription = await remoteRpc('settings/describe', {})
 assert.equal(typeof settingsDescription.value.writable, 'boolean')
 assert.equal(typeof settingsDescription.value.hasDocument, 'boolean')
@@ -262,6 +340,32 @@ function nextRemoteFrame(timeoutMs = 5_000) {
     }
   })
 }
+const ordinaryEventNames = []
+async function nextRemoteEventFrameOfType(type) {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const frame = await nextRemoteFrame(Math.max(1, deadline - Date.now()))
+    if (!frame) continue
+    assert.equal(frame.type, 'item', `expected a Remote event item while waiting for ${type}`)
+    if (frame.value?.type === 'emit') {
+      ordinaryEventNames.push(frame.value.event)
+      continue
+    }
+    if (frame.value?.type === type) return frame
+    assert.fail(`unexpected Remote event frame while waiting for ${type}: ${JSON.stringify(frame.value)}`)
+  }
+  assert.fail(`Timed out waiting for Remote event frame ${type}.`)
+}
+async function assertWaterfallFixture(value, fixtureName) {
+  const normalized = structuredClone(value)
+  normalized.eventId = 'event-fixture-1'
+  normalized.agentId = 'agent-fixture-1'
+  if (normalized.event === 'user-questions/request') {
+    normalized.request.questions[0].id = 'question-fixture-1'
+  }
+  const expected = JSON.parse(await readFile(new URL(`./fixtures/contract-v1/${fixtureName}`, import.meta.url), 'utf8'))
+  assert.deepEqual(normalized, expected)
+}
 const remoteEventsOpen = JSON.parse(await readFile(new URL('./fixtures/contract-v1/stream-open.events.json', import.meta.url), 'utf8'))
 async function openRemoteEvents(streamId) {
   const expectedFrame = nextRemoteFrame()
@@ -294,13 +398,15 @@ assert.equal(renamedWorkspaceFrame.value?.type, 'upsert')
 assert.equal(renamedWorkspaceFrame.value.workspace.title, 'M0 renamed workspace')
 remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-workspace-follow' }))
 
-const activeEventClientId = await openRemoteEvents('m0-product-events-1')
-await openRemoteEvents('m0-product-events-2')
-const eventResult = await remoteRpc('$events/result', {
-  clientId: activeEventClientId,
-  eventId: 'm0-no-pending-waterfall',
-  outcome: { kind: 'next' },
-})
+const firstEventStreamId = 'm0-product-events-1'
+const secondEventStreamId = 'm0-product-events-2'
+const firstEventClientId = await openRemoteEvents(firstEventStreamId)
+const secondEventClientId = await openRemoteEvents(secondEventStreamId)
+const eventResult = await submitEventResult(
+  firstEventClientId,
+  'm0-no-pending-waterfall',
+  { kind: 'next' },
+)
 assert.equal(eventResult.value, undefined, 'the official current-generation result RPC accepts the no-op for a non-pending event')
 const malformedEventResult = await fetch(`${remoteBaseURL}/api/$events/result`, {
   method: 'POST',
@@ -312,7 +418,7 @@ const malformedEventResult = await fetch(`${remoteBaseURL}/api/$events/result`, 
     type: 'client-request',
     rpcId: 'm0-malformed-event-result',
     method: '$events/result',
-    payload: { args: { clientId: activeEventClientId, eventId: 'm0-invalid', outcome: { kind: 'next', extra: true } } },
+    payload: { args: { clientId: firstEventClientId, eventId: 'm0-invalid', outcome: { kind: 'next', extra: true } } },
   }),
 })
 assert.equal(malformedEventResult.status, 403, 'the production carrier blocks malformed Gateway-internal event outcomes')
@@ -333,18 +439,206 @@ assert.equal(staleEventResult.status, 200)
 const staleEventEnvelope = await staleEventResult.json()
 assert.equal(staleEventEnvelope.result.ok, false, 'the official Gateway rejects an event result from an expired stream generation')
 assert.equal(staleEventEnvelope.result.error.code, 'gateway/internal')
-remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-events-1' }))
-assert.equal(await nextRemoteFrame(250), undefined, 'production carrier cancels one event stream without affecting its sibling')
-assert.equal(remoteSocket.readyState, WebSocket.OPEN, 'production sibling event stream keeps its physical socket open')
-remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-events-2' }))
+const nextRun = await startHostQuestion('m0-question-next')
+const nextDeliveries = [await nextRemoteEventFrameOfType('waterfall'), await nextRemoteEventFrameOfType('waterfall')]
+for (const frame of nextDeliveries) {
+  assert.equal(frame.type, 'item')
+  assert.equal(frame.value?.type, 'waterfall')
+  assert.equal(frame.value?.event, 'user-questions/request')
+  assert.equal(frame.value?.agentId, nextRun.agentId)
+  assert.equal(frame.value?.request?.questions?.[0]?.id, 'm0-question-next')
+  assert.equal(Object.hasOwn(frame.value.request, 'agent'), false)
+  assert.equal(Object.hasOwn(frame.value.request, 'signal'), false)
+}
+assert.equal(nextDeliveries[0].value.eventId, nextDeliveries[1].value.eventId, 'one pending Host question is fanned out with one eventId')
+assert.deepEqual(new Set(nextDeliveries.map((frame) => frame.streamId)), new Set([firstEventStreamId, secondEventStreamId]))
+await assertWaterfallFixture(nextDeliveries[0].value, 'waterfall-event.user-question.json')
+await submitEventResult(firstEventClientId, nextDeliveries[0].value.eventId, { kind: 'next' })
+assert.equal((await readHostQuestion(nextRun.runId)).status, 'pending', 'next withdraws only one Client delivery')
+await submitEventResult(secondEventClientId, nextDeliveries[0].value.eventId, {
+  kind: 'result',
+  value: { answers: [{ id: 'm0-question-next', selected: ['Continue'] }] },
+})
+const nextOutcome = await waitForHostQuestion(nextRun.runId)
+assert.equal(nextOutcome.ok, true)
+assert.deepEqual(nextOutcome.value.answers, [{ id: 'm0-question-next', selected: ['Continue'] }])
+await disposeHostQuestion(nextRun.runId)
+
+const winnerRun = await startHostQuestion('m0-question-first-terminal')
+const winnerDeliveries = [await nextRemoteEventFrameOfType('waterfall'), await nextRemoteEventFrameOfType('waterfall')]
+for (const frame of winnerDeliveries) {
+  assert.equal(frame.type, 'item')
+  assert.equal(frame.value?.type, 'waterfall')
+  assert.equal(frame.value?.event, 'user-questions/request')
+  assert.equal(frame.value?.agentId, winnerRun.agentId)
+}
+assert.equal(winnerDeliveries[0].value.eventId, winnerDeliveries[1].value.eventId)
+const winningDelivery = winnerDeliveries.find((frame) => frame.streamId === firstEventStreamId)
+const losingDelivery = winnerDeliveries.find((frame) => frame.streamId === secondEventStreamId)
+assert.ok(winningDelivery && losingDelivery)
+await submitEventResult(firstEventClientId, winningDelivery.value.eventId, {
+  kind: 'result',
+  value: { answers: [{ id: 'm0-question-first-terminal', selected: ['Continue'] }] },
+})
+const losingDeliveryCancel = await nextRemoteEventFrameOfType('cancel')
+assert.equal(losingDeliveryCancel.type, 'item')
+assert.equal(losingDeliveryCancel.streamId, secondEventStreamId)
+assert.deepEqual(losingDeliveryCancel.value, { type: 'cancel', eventId: winningDelivery.value.eventId })
+assert.deepEqual((await waitForHostQuestion(winnerRun.runId)).value.answers, [
+  { id: 'm0-question-first-terminal', selected: ['Continue'] },
+])
+await disposeHostQuestion(winnerRun.runId)
+
+const approvalRun = await startHostApproval()
+const approvalDeliveries = [await nextRemoteEventFrameOfType('waterfall'), await nextRemoteEventFrameOfType('waterfall')]
+for (const frame of approvalDeliveries) {
+  assert.equal(frame.value?.type, 'waterfall')
+  assert.equal(frame.value?.event, 'approval/request')
+  assert.equal(frame.value?.agentId, approvalRun.agentId)
+  assert.equal(frame.value?.request?.toolName, 'm0-probe-tool')
+  assert.equal(frame.value?.request?.callId, 'm0-probe-call')
+  assert.equal(Object.hasOwn(frame.value.request, 'signal'), false)
+}
+assert.equal(approvalDeliveries[0].value.eventId, approvalDeliveries[1].value.eventId)
+await assertWaterfallFixture(approvalDeliveries[0].value, 'waterfall-event.approval.json')
+const approvalWinner = approvalDeliveries.find((frame) => frame.streamId === firstEventStreamId)
+const approvalLoser = approvalDeliveries.find((frame) => frame.streamId === secondEventStreamId)
+assert.ok(approvalWinner && approvalLoser)
+await submitEventResult(firstEventClientId, approvalWinner.value.eventId, {
+  kind: 'result',
+  value: 'allowed-once',
+})
+const approvalLoserCancel = await nextRemoteEventFrameOfType('cancel')
+assert.equal(approvalLoserCancel.streamId, secondEventStreamId)
+assert.deepEqual(approvalLoserCancel.value, { type: 'cancel', eventId: approvalWinner.value.eventId })
+const approvalOutcome = await waitForHostApproval(approvalRun.runId)
+assert.equal(approvalOutcome.ok, true)
+assert.equal(approvalOutcome.value, 'allowed-once')
+assert.deepEqual(approvalOutcome.audit.map((event) => event.type), ['approval/asked', 'approval/decided'])
+assert.equal(approvalOutcome.audit[1].data.outcome, 'allowed-once')
+await disposeHostApproval(approvalRun.runId)
+
+const cancelledRun = await startHostQuestion('m0-question-host-cancel')
+const cancelledDeliveries = [await nextRemoteEventFrameOfType('waterfall'), await nextRemoteEventFrameOfType('waterfall')]
+assert.equal(cancelledDeliveries[0].value?.eventId, cancelledDeliveries[1].value?.eventId)
+const hostCancelResponse = await fetch(`${baseURL}/m0/events/question-runs/${cancelledRun.runId}/cancel`, { method: 'POST' })
+assert.equal(hostCancelResponse.status, 200)
+const cancellationFrames = [await nextRemoteEventFrameOfType('cancel'), await nextRemoteEventFrameOfType('cancel')]
+assert.deepEqual(new Set(cancellationFrames.map((frame) => frame.streamId)), new Set([firstEventStreamId, secondEventStreamId]))
+for (const frame of cancellationFrames) {
+  assert.equal(frame.value?.type, 'cancel')
+  assert.equal(frame.value?.eventId, cancelledDeliveries[0].value.eventId)
+}
+const cancelledOutcome = await waitForHostQuestion(cancelledRun.runId)
+assert.equal(cancelledOutcome.ok, false)
+assert.equal(cancelledOutcome.error.code, 'ASK_ABORTED')
+await disposeHostQuestion(cancelledRun.runId)
+
+remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: firstEventStreamId }))
+await new Promise((resolve) => setTimeout(resolve, 100))
+assert.equal(remoteSocket.readyState, WebSocket.OPEN, 'cancelling one real event stream preserves its physical sibling stream')
+
+const replayRun = await startHostQuestion('m0-question-replay')
+const originalReplayDelivery = await nextRemoteEventFrameOfType('waterfall')
+assert.equal(originalReplayDelivery.streamId, secondEventStreamId)
+assert.equal(originalReplayDelivery.value?.event, 'user-questions/request')
+assert.equal(originalReplayDelivery.value?.agentId, replayRun.agentId)
+const oldReplayClientIds = new Set([firstEventClientId, secondEventClientId])
 await new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error('Production Remote WebSocket did not close.')), 5_000)
+  const timer = setTimeout(() => reject(new Error('Old Remote socket did not close before pending-event replay.')), 5_000)
   remoteSocket.once('close', () => {
     clearTimeout(timer)
     resolve()
   })
-  remoteSocket.close(1000, 'M0 production carrier probe complete')
+  remoteSocket.close(1000, 'M0 pending-event generation replacement')
 })
+assert.equal((await readHostQuestion(replayRun.runId)).status, 'pending', 'disconnect preserves the official still-pending Host question')
+
+const replaySocket = new WebSocket(remoteMuxURL, {
+  headers: { authorization: `Bearer ${paired.deviceToken}` },
+})
+const replayFrames = []
+let replayFrameWaiter
+replaySocket.on('message', (data) => {
+  const encoded = data.toString()
+  if (!replayFrameWaiter) {
+    replayFrames.push(encoded)
+    return
+  }
+  const waiter = replayFrameWaiter
+  replayFrameWaiter = undefined
+  clearTimeout(waiter.timer)
+  waiter.resolve(parseRemoteStreamServerMessage(encoded))
+})
+replaySocket.on('close', (code) => {
+  if (!replayFrameWaiter) return
+  const waiter = replayFrameWaiter
+  replayFrameWaiter = undefined
+  clearTimeout(waiter.timer)
+  waiter.reject(new Error(`Replacement event socket closed before expected frame (${code}).`))
+})
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Timed out opening the replacement event generation.')), 5_000)
+  replaySocket.once('open', () => {
+    clearTimeout(timer)
+    resolve()
+  })
+  replaySocket.once('error', (error) => {
+    clearTimeout(timer)
+    reject(error)
+  })
+})
+async function nextReplayFrame() {
+  if (replayFrames.length) return Promise.resolve(parseRemoteStreamServerMessage(replayFrames.shift()))
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        if (replayFrameWaiter === waiter) replayFrameWaiter = undefined
+        reject(new Error('Timed out waiting for the replacement-generation event frame.'))
+      }, 5_000),
+    }
+    replayFrameWaiter = waiter
+  })
+}
+const replayStreamId = 'm0-product-events-reconnected'
+const replayReadyWait = nextReplayFrame()
+replaySocket.send(JSON.stringify({ ...remoteEventsOpen, streamId: replayStreamId }))
+const replayReadyFrame = await replayReadyWait
+assert.equal(replayReadyFrame.type, 'item')
+assert.equal(replayReadyFrame.streamId, replayStreamId)
+assert.equal(replayReadyFrame.value?.type, 'ready')
+const replacementClientId = replayReadyFrame.value.clientId
+assert.equal(oldReplayClientIds.has(replacementClientId), false, 'a physical reconnect receives a new event client generation')
+const replayEventWait = nextReplayFrame()
+const replayedEventFrame = await replayEventWait
+assert.equal(replayedEventFrame.type, 'item')
+assert.equal(replayedEventFrame.streamId, replayStreamId)
+assert.equal(replayedEventFrame.value?.type, 'waterfall')
+assert.equal(replayedEventFrame.value?.event, 'user-questions/request')
+assert.equal(replayedEventFrame.value?.eventId, originalReplayDelivery.value.eventId, 'the Host replays the same still-pending eventId')
+assert.equal(replayedEventFrame.value?.agentId, replayRun.agentId)
+await submitEventResult(replacementClientId, replayedEventFrame.value.eventId, {
+  kind: 'result',
+  value: { answers: [{ id: 'm0-question-replay', selected: ['Stop'] }] },
+})
+const replayOutcome = await waitForHostQuestion(replayRun.runId)
+assert.deepEqual(replayOutcome.value.answers, [{ id: 'm0-question-replay', selected: ['Stop'] }])
+await disposeHostQuestion(replayRun.runId)
+replaySocket.send(JSON.stringify({ type: 'cancel', streamId: replayStreamId }))
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Replacement event socket did not close.')), 5_000)
+  replaySocket.once('close', () => {
+    clearTimeout(timer)
+    resolve()
+  })
+  replaySocket.close(1000, 'M0 pending-event replay complete')
+})
+
+assert.equal(remoteSocket.readyState, WebSocket.CLOSED, 'the old physical event generation is closed')
+assert.equal(replaySocket.readyState, WebSocket.CLOSED, 'the replacement event generation closed cleanly')
+/* old logical event streams were disposed with the old physical connection */
 
 const reconnectedSocket = new WebSocket(remoteMuxURL, {
   headers: { authorization: `Bearer ${paired.deviceToken}` },
@@ -495,6 +789,13 @@ console.log(JSON.stringify({
   productionEventResultRPC: eventResult.value === undefined,
   malformedEventResultRejected: malformedEventResult.status === 403,
   staleEventClientIdRejectedByGateway: staleEventEnvelope.result.ok === false,
+  officialQuestionRequestResult: nextOutcome.ok && winnerRun.runId.length > 0,
+  officialApprovalRequestResultAndAudit: approvalOutcome.value === 'allowed-once' && approvalOutcome.audit.length === 2,
+  eventNextIsDeliveryScoped: nextOutcome.ok,
+  firstTerminalResultCancelsSibling: losingDeliveryCancel.value.type === 'cancel',
+  hostQuestionAbortPropagates: cancelledOutcome.error.code === 'ASK_ABORTED',
+  pendingQuestionReplayedOnNewGeneration: replayOutcome.ok && !oldReplayClientIds.has(replacementClientId),
+  ordinaryEventsObserved: ordinaryEventNames.length,
   productionPairingAndInfo: true,
   productionSettingsDescribeSchemaAndRedaction: true,
   officialSettingsRevisionConflictAndCAS: true,

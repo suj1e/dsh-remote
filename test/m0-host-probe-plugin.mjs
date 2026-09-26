@@ -1,11 +1,12 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parseRemoteStreamClientMessage } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 
-export const inject = ['connection', 'typertGateway', 'dshRemoteControl']
+export const inject = ['connection', 'typertGateway', 'dshRemoteControl', 'agents', 'approval', 'userQuestions']
 
 export function apply(ctx) {
   ctx.effect(async () => {
@@ -21,6 +22,8 @@ export function apply(ctx) {
     const fetchHandler = ctx.connection.createSharedFetchHandler('/api')
     const app = Fastify({ logger: false })
     await app.register(websocket, { options: { maxPayload: 16 * 1024 } })
+    const questionRuns = new Map()
+    const approvalRuns = new Map()
 
     const activeMuxStreams = new Set()
     const sendFrame = (socket, frame) => new Promise((resolve, reject) => {
@@ -95,6 +98,116 @@ export function apply(ctx) {
     app.get('/m0/mux/probe-state', async () => ({
       activeStreamIds: [...activeMuxStreams].map(({ streamId }) => streamId),
     }))
+
+    app.post('/m0/events/question-runs', async (request, reply) => {
+      const runId = randomUUID()
+      const sessionId = randomUUID()
+      const handle = await ctx.agents.create({ sessionId })
+      const abort = new AbortController()
+      const record = { handle, abort, result: undefined, promise: undefined }
+      record.promise = ctx.userQuestions.ask({
+        agent: handle.agent,
+        questions: request.body?.questions,
+        signal: abort.signal,
+      }).then(
+        (value) => ({ ok: true, value }),
+        (error) => ({
+          ok: false,
+          error: {
+            name: typeof error?.name === 'string' ? error.name : 'Error',
+            ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+          },
+        }),
+      ).then((result) => {
+        record.result = result
+        return result
+      })
+      questionRuns.set(runId, record)
+      return reply.code(202).send({ runId, agentId: handle.agent.id })
+    })
+
+    app.get('/m0/events/question-runs/:runId', async (request, reply) => {
+      const record = questionRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown question run' })
+      if (!record.result) return reply.code(202).send({ status: 'pending' })
+      return reply.send({ status: 'settled', ...record.result })
+    })
+
+    app.post('/m0/events/question-runs/:runId/cancel', async (request, reply) => {
+      const record = questionRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown question run' })
+      record.abort.abort(new Error('M0 Host question cancellation probe.'))
+      return reply.send({ accepted: true })
+    })
+
+    app.delete('/m0/events/question-runs/:runId', async (request, reply) => {
+      const record = questionRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown question run' })
+      if (!record.result) record.abort.abort(new Error('M0 Host question run disposed.'))
+      await record.promise
+      await record.handle.dispose()
+      questionRuns.delete(request.params.runId)
+      return reply.send({ disposed: true })
+    })
+
+    app.post('/m0/events/approval-runs', async (request, reply) => {
+      const runId = randomUUID()
+      const sessionId = randomUUID()
+      const handle = await ctx.agents.create({ sessionId })
+      const turn = 1
+      handle.agent.session.append('turn/start', { turn })
+      const abort = new AbortController()
+      const record = { handle, abort, result: undefined, promise: undefined }
+      record.promise = ctx.approval.request({
+        agent: handle.agent,
+        toolName: 'm0-probe-tool',
+        callId: 'm0-probe-call',
+        reason: 'Approve the isolated M0 protocol probe.',
+        signal: abort.signal,
+      }).then(
+        (value) => ({ ok: true, value }),
+        (error) => ({
+          ok: false,
+          error: {
+            name: typeof error?.name === 'string' ? error.name : 'Error',
+            ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+          },
+        }),
+      ).then((result) => {
+        handle.agent.session.append('turn/end', { turn, reason: { kind: 'completed' } })
+        const audit = handle.agent.session.snapshotEvents()
+          .filter((event) => event.type === 'approval/asked' || event.type === 'approval/decided')
+          .map((event) => ({ type: event.type, data: event.data }))
+        record.result = { ...result, audit }
+        return record.result
+      })
+      approvalRuns.set(runId, record)
+      return reply.code(202).send({ runId, agentId: handle.agent.id })
+    })
+
+    app.get('/m0/events/approval-runs/:runId', async (request, reply) => {
+      const record = approvalRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown approval run' })
+      if (!record.result) return reply.code(202).send({ status: 'pending' })
+      return reply.send({ status: 'settled', ...record.result })
+    })
+
+    app.post('/m0/events/approval-runs/:runId/cancel', async (request, reply) => {
+      const record = approvalRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown approval run' })
+      record.abort.abort(new Error('M0 Host approval cancellation probe.'))
+      return reply.send({ accepted: true })
+    })
+
+    app.delete('/m0/events/approval-runs/:runId', async (request, reply) => {
+      const record = approvalRuns.get(request.params.runId)
+      if (!record) return reply.code(404).send({ error: 'unknown approval run' })
+      if (!record.result) record.abort.abort(new Error('M0 Host approval run disposed.'))
+      await record.promise
+      await record.handle.dispose()
+      approvalRuns.delete(request.params.runId)
+      return reply.send({ disposed: true })
+    })
 
     const forwardJSON = async (request, reply) => {
       const url = new URL(request.url, 'http://dsh-m0.invalid')
@@ -199,6 +312,20 @@ export function apply(ctx) {
     ctx.logger('m0-host-probe').info('Isolated M0 Host probe is ready.')
 
     return async () => {
+      for (const record of questionRuns.values()) {
+        if (!record.result) record.abort.abort(new Error('M0 probe plugin is unloading.'))
+      }
+      for (const record of approvalRuns.values()) {
+        if (!record.result) record.abort.abort(new Error('M0 probe plugin is unloading.'))
+      }
+      await Promise.all([...questionRuns.values()].map(async (record) => {
+        await record.promise
+        await record.handle.dispose()
+      }))
+      await Promise.all([...approvalRuns.values()].map(async (record) => {
+        await record.promise
+        await record.handle.dispose()
+      }))
       await app.close()
     }
   }, 'isolated M0 Host carrier probe')
