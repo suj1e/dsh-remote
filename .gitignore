@@ -1,4 +1,12 @@
 node_modules/
 lib/
+dist/
+coverage/
 *.log
 .DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+# pnpm-lock.yaml must be committed.

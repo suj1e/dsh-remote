@@ -1,210 +1,101 @@
-# dsh-remote 手机端协议（v1）
+# dsh-remote 正式接入契约 v1
 
-本文档是 iOS App 与 dsh-remote 插件通信的唯一契约。协议分为三部分：
+更新：2026-09-26。状态：1.0.0 目标设计，M0 完成实际 carrier 校准后冻结。当前仓库尚无正式服务实现，不能把示例当成在线接口已可用的声明。
 
-1. **配对**：用桌面配对页上的配对码换取设备令牌
-2. **REST**：`/v1/info`（主机信息）与 `/v1/rpc`（一元 Remote 调用）
-3. **WebSocket**：`/v1/ws`（Remote 流 + 主机事件推送）
+本文拥有设备接入契约；session、workspace、文件、审批等业务契约由固定版本官方 DSH Remote 拥有。[iOS 消费面与源码证据](../dsh-mobile/docs/PROTOCOL-BASELINE-1.0.0.md)记录所需业务接口，[插件计划](docs/PLAN-1.0.0.md)记录实现顺序，[兼容矩阵](docs/COMPATIBILITY.md)记录通过验证的组合。
 
-传输为明文 HTTP（v1 定位：可信局域网 / Tailscale 等组网）。除配对外，所有请求都要求 Bearer 令牌。
+## 1. 契约分层
 
----
+| 层 | 所有者 | 变化规则 |
+| --- | --- | --- |
+| 配对、手机鉴权、主机身份、访问能力元数据 | dsh-remote | 在正式 accessVersion 下向后兼容；破坏性改变升 major |
+| RPC 参数、RemoteResult、流 frame/byte codec、session/event 语义 | 官方 DSH | 按确切 DSH/package 版本固定，插件不改字段、不重建业务对象 |
+| 多主机路由、缓存、界面模型 | dsh-mobile | 本地 profile UUID + remote resource ID，不发明新 Host 业务实体 |
 
-## 1. 基础约定
+首次正式 v1 不兼容实验 v1 是明确的产品决定。实验 PROTOCOL.md 已归档，不作为新实现模板。
 
-- 所有请求/响应体均为 UTF-8 JSON。
-- 认证方式：`Authorization: Bearer <deviceToken>`。
-- 错误响应形如 `{"error": "<code>"}`；`/v1/rpc` 的业务错误在 RemoteResult 信封内（见 3.2）。
-- 基地址：配对时从二维码/深链获得，形如 `http://192.168.x.x:8747`。
-  二维码内容：`dsh-remote://pair?host=<ip>&port=<port>&code=<6位配对码>`。
+## 2. 配对与身份
 
-## 2. 配对
+配对由主机操作方开启有期限的窗口。二维码包含可达 baseURL、临时配对信息和接入版本；长期凭据只能在成功配对响应中返回。保留手工输入地址和配对码。
 
-### POST /v1/pair
+POST /v1/pair 的输入是配对码和手机名称；返回独立 deviceId、deviceToken 和主机元数据。token 由 Node crypto 生成至少 32 字节随机值，服务端持久化摘要，手机持久化到 Keychain。每个主机独立签发，令牌不能跨主机转用。
 
-```json
-{ "code": "146682", "deviceName": "Sujie 的 iPhone" }
-```
+GET /v1/info 在设备认证后返回下列元数据。字段是本版设计，M0 以两端 fixture 固定最终 JSON schema：
 
-- 成功 `200`：
+| 字段 | 语义 |
+| --- | --- |
+| accessVersion | 本插件配对/鉴权/载体版本，首次正式值 1 |
+| contractId | 固定官方 Remote 版本与消费面 fixture 的标识；不是宣称官方存在这个版本字段 |
+| plugin.name / version | 正式 npm 插件身份和版本 |
+| dsh.version | 实际运行的官方 DSH build；不可硬编码为开发机版本 |
+| host.instanceId | 安装实例持久随机 UUID，重启/改地址不变；清空正式 registry 才产生新身份 |
+| host.name / platform | 显示名与 darwin/win32/linux；hostname 不作身份 |
+| device.id / name | 这部配对手机的标识；不是主机 ID |
+| endpoints | 当前允许且实际可用的官方 unary/stream endpoint 名称与类别 |
+| transports / limits | 实际可用载体及请求、帧、连接、上传等预算；不得虚报 bytes 支持 |
+| server.addresses | 候选访问地址；客户端不得自动把 token 发到广告地址 |
 
-```json
-{
-  "deviceId": "b3b5c868-...",
-  "deviceToken": "<64位hex，持久保存到钥匙串>",
-  "plugin": { "name": "dsh-remote", "version": "0.1.0" },
-  "host": { "name": "MacBook-Pro-2.local", "platform": "darwin" },
-  "server": { "port": 8747, "addresses": ["192.168.2.116"] }
-}
-```
+本地主机档案 ID 由 iOS 生成。instanceId 用于认证成功后的身份核对与用户确认的地址别名关联，不能代替认证。相同 instanceId 也不自动把不同 endpoint 合并或转移凭据。
 
-- `403 {"error":"pairing/invalid-code"}`：配对码错误（同一 IP 连续 5 次失败后锁定 5 分钟）。
-- `429 {"error":"pairing/rate-limited"}`：锁定期间（带 `retry-after` 秒数响应头）。
+配对失败区分无效/过期窗口、错误码、限流与服务未就绪。429 返回 Retry-After。撤销生效后新 HTTP 拒绝、现有该设备 WS/上传/订阅取消；其余设备不受影响。
 
-配对码可在桌面配对页手动更换（更换后旧码立即失效；已配对设备不受影响）。
+## 3. 载体
 
-## 3. REST
+| 入口 | 访问范围 | 处理规则 |
+| --- | --- | --- |
+| POST /v1/pair | 配对窗口 + 限流 | 插件自有设备接入操作 |
+| GET /v1/info | Bearer | 只返回该设备可见的身份/版本/能力 |
+| POST /v1/rpc | Bearer + endpoint allowlist | endpoint 与 args 原样交官方 dispatchRpc，保留官方参数验证与 RemoteResult |
+| WS /v1/ws | Upgrade Bearer + 每个逻辑流 allowlist | 复用官方 stream-protocol 的 open/item/end/cancel/error 与字节载体 |
+| 官方附件上传 / 字节载体的认证映射 | Bearer + 对应会话及 endpoint 权限 | M0 固定路径、content-type 和 framing；直接复用官方上传/字节 codec，不定义手机文件业务协议 |
+| 主机管理入口 | 主机操作方权限 | 通过官方 Host 设置入口；如需独立 HTTP 管理路由，限定回环、准确 origin 和管理鉴权，手机 token 不能访问 |
 
-### 3.1 GET /v1/info
+RPC 外层只有选端点和传参的职责，例如：
 
-要求认证。返回当前设备与主机信息（同配对响应的 `plugin/host/server/device` 字段，`device` 为 `{id, name}`）。可用作连接健康检查。
+    {"endpoint":"session/list","args":{"_request":{}}}
 
-### 3.2 POST /v1/rpc
+流传参保留官方 payload 外层，例如：
 
-要求认证。调用一个 Host Remote 端点（与桌面 Web GUI 同一 API 面）：
+    {"type":"open","streamId":"events","endpoint":"$events","payload":{"args":{}}}
 
-```json
-{ "endpoint": "session/list", "args": { "_request": {} } }
-```
+业务返回仍是官方 RemoteResult。HTTP 认证/限流/体积错误可先返回对应 HTTP 错误；已进入 Gateway 的业务失败保留官方 code/message/details，不能把所有 HTTP 错误描述成 200。
 
-响应恒为 RemoteResult 信封，**HTTP 状态码始终为 200**（业务失败在信封内）：
+字节载体是 M0 发布阻断项：官方 Uint8Array/attachment framing 必须能双向无损承载并可取消。确定具体 carrier 前，transports 不能声明 bytes/upload 可用；不得用 JSON.stringify(Uint8Array) 或将文件全读成大字符串绕过此门禁。
 
-```json
-{ "ok": true,  "value": { ... } }
-{ "ok": false, "error": { "code": "gateway/arguments-invalid", "message": "...", "details": {} } }
-```
+HTTP(S) baseURL 可含受支持代理前缀。由 URL 解析器拼接路径和切换 ws/wss，不能字符串硬拼。TLS 可在反向代理终止；传入代理头仅在显式配置可信代理时接受。客户端不忽略 TLS 错误，不向跨源 redirect 转交 token。
 
-端点白名单默认为 `session/*` 与 `$events/*`；白名单外的端点返回 `403 {"error":"remote/endpoint-forbidden"}`。
+## 4. Endpoint 暴露策略
 
-### 3.3 常用端点与已验证的参数形状
+默认策略由产品需要的具体官方方法组成，不使用全局 *：
 
-Host 对参数做严格校验，错误信息会精确指出缺失/多余字段（`gateway/arguments-invalid`），App 可据此自适应。
+- session：list/create/fork/rename/search/follow/page/control/projections/prompt/cancel/updateQueue/modelCatalog/selectModel/attachment。
+- workspace：follow/create/rename/delete/insertBefore、归档/恢复/置顶/排序相关已验证方法。
+- directoryPicker/list：供远程选择已有目录。
+- workspaceFiles：list/read/stat/readBytes/changes。
+- fileUploads：官方上传所需方法/route。
+- agentPresets：list/read/select；permissionPresets/catalog。
+- commands/execute：用于官方当前会话权限设置，入口沿用官方命令授权；不能在插件重新实现 /permission。
+- settings：只暴露产品默认配置所需的 describe/update 操作，限制可写 namespace/字段。
+- 精确 $events 与 $events/result。
 
-| 端点 | args | 说明 |
-|---|---|---|
-| `session/list` | `{"_request": {}}` | 会话列表（含运行状态、标题、cwd、token 用量等投影） |
-| `session/page` | `{"request": {"sessionId": "..."}}` | 翻页读取会话事件 |
-| `session/follow` | `{"request": {"address": {"kind": "session", "sessionId": "..."}}}` | （流）实时跟随会话 |
-| `session/prompt` | `{"request": {"sessionId": "...", "requestId": "<幂等id>", "mode": "queue"\|"steer", "content": [{"type": "text", "text": "你好"}], "clientTimeZone": "Asia/Shanghai"(可选)}}` | 发送消息（✓实测：返回 `{"accepted":true}`） |
-| `session/cancel` | `{"request": {"sessionId": "..."}}` | 取消当前运行（✓实测：返回 `{"accepted":true}`） |
-| `$events` | （流，payload 必须为 `{"args": {}}`） | 订阅转发的主机事件（含审批） |
-| `$events/result` | `{"clientId": "...", "eventId": "...", "outcome": {"kind": "result", "value": "allowed-once"}}` | 应答 waterfall 事件（审批/提问） |
+名单中的方法必须在固定官方包实际存在并通过样本校准才启用。credentials、任意插件安装、账号管理、磁盘写入/删除和未列方法不会因 namespace 相似而获准。
 
-`session/prompt.requestId` 是幂等键：同一 id 重复提交会被安全忽略（返回 `{accepted: true}`）。
+鉴权与允许列表必须同时覆盖 unary、stream 和原始文件 body，不能让 bytes route 成为旁路。过滤 settings 字段是接入权限限制；官方 revision/schema/业务校验仍交 Gateway。
 
-## 4. WebSocket /v1/ws
+## 5. 流、恢复与资源所有权
 
-Upgrade 请求带 `Authorization: Bearer <token>`，未认证直接被拒（无应答帧）。
+每个物理连接拥有逻辑 stream 注册表；streamId 只在该连接内唯一。终止、设备撤销、插件关闭都传递 AbortSignal，释放 Gateway 订阅、文件传输和监听器。慢消费者按已配置预算背压或明确断开，不能无限缓冲。
 
-### 4.1 帧类型（与桌面 `/api/remote.mux` 同构）
+保留官方缺失 item.value 与 JSON null 的区别。普通主机事件不是可靠队列，不提供全量通知重放承诺。workspace/control/follow 的 baseline/query/cursor 负责恢复。
 
-连接建立后服务端先发：
+$events ready 的 clientId 属于该代连接，重连必须获取新值。只对仍有效的 pending waterfall 作答；取消、已处理和旧代次不能复活。官方源负责是否可重放未决请求，插件不能私存一套“待审批真相”。
 
-```json
-{ "type": "hello", "plugin": {...}, "host": {...}, "server": {...}, "device": {...} }
-```
+会话发送使用官方 requestId 幂等。读请求可按策略重试；不能把所有写请求在断线后无差别重发。桌面与手机结果竞争，以官方结果与取消/完成通知收敛。
 
-之后三种帧并存：
+多主机聚合由 iOS 负责。插件只代表其所在 Host，所有 token、会话、文件和交互操作按该 Host 授权，不代理其它主机。
 
-**客户端 → 服务端**（与官方 stream-protocol 完全一致）：
+## 6. 冻结与变更
 
-```json
-{ "type": "open",   "streamId": "s1", "endpoint": "session/follow", "payload": { "args": { ... } } }
-{ "type": "item",   "streamId": "s1", "value": ... }        // 可选 value；uplink 上行
-{ "type": "end",    "streamId": "s1" }                       // uplink 半关闭
-{ "type": "cancel", "streamId": "s1" }                       // 取消该逻辑流
-```
+M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、成对 contract ID。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
 
-**服务端 → 客户端**：
-
-```json
-{ "type": "item",  "streamId": "s1", "value": ... }          // 下行数据（value 可省略表示 undefined）
-{ "type": "end",   "streamId": "s1" }                        // 流正常结束
-{ "type": "error", "streamId": "s1", "error": { "code": "...", "message": "...", "details": {} } }
-{ "type": "notify", "event": "api-session/added", "payload": ... }   // 本插件扩展：主机事件推送
-```
-
-`streamId` 由客户端生成（每个逻辑流唯一）。服务端 30 秒 Ping 一次，客户端按 WebSocket 协议层自动 Pong 即可。
-
-### 4.2 notify 事件（会话列表驱动）
-
-| event | payload |
-|---|---|
-| `api-session/added` | SessionSummary（含 sessionId、标题等） |
-| `api-session/removed` | `{sessionId}` |
-| `api-session/status` | `{sessionId, running}` |
-| `api-session/activity` | `{sessionId, updatedAt}` |
-
-### 4.3 会话实时内容
-
-`open session/follow` 后：
-
-1. 首帧 `item` 是完整快照：`{type:"snapshot", header:{...}, ...}`
-2. 之后是增量 `{type:"event", event:{...}}` 帧（消息、工具调用、助手流片段等）
-3. 断线重连后重新 open 同一 `session/follow`，以最新快照恢复
-
-**帧结构（✓实测）**：首帧 `{type:"snapshot", header:{version,id,createdAt,cwd,isSeeded,delegationDepth,agentPreset}, cursor, records, hasMore, projections}`，其中 `records` 是**事件包装数组**（与增量帧同构）：`[{type:"event", event:{...}}, ...]`；之后每条增量 `{type:"event", event:{type, seq, time, data, surfaceOp?}}`。事件类型实测样本：
-
-| event.type | data 要点 |
-|---|---|
-| `turn/start` / `turn/end` | `{turn}` / `{turn, reason:{kind:"completed"\|...}}` — 轮次边界，驱动运行状态 |
-| `step/start` / `step/end` | `{turn, step}` — 步骤边界 |
-| `user/message` | `{content:[{type:"text",text}], source:{kind:"user",rpcId}, role:"user", id}`（surfaceOp:"append"） |
-| `assistant/message` | `{turn, step, message:{role:"assistant", content:[{type:"reasoning",text}\|{type:"text",text}], source:{kind:"model",provider,model}}}` |
-| `request/header` | `{header:{config:{provider,model,reasoningEffort}, tools:[...]}}` — 本轮请求元数据 |
-| `agent/inbox/spliced` | 收件箱拼接（inserted/removedCount），UI 可忽略 |
-| `tool/*` 等 | 工具调用族（本样本未覆盖，按未知类型降级渲染） |
-
-### 4.4 审批与用户提问（waterfall 事件）
-
-1. `open` 端点 `$events`（payload 必须精确为 `{"args": {}}`）
-2. 首帧 `item`：`{type:"ready", clientId, host:{...}}` —— **保存 `clientId`**
-3. 之后每个事件一个 `item`。`approval/request` / `user-questions/request` 的 payload 携带待应答请求及其 `eventId`
-4. App 弹出审批卡；用户决定后调用 REST：
-
-```json
-POST /v1/rpc
-{ "endpoint": "$events/result",
-  "args": { "clientId": "<ready 帧的 clientId>", "eventId": "<事件的 eventId>",
-            "outcome": { "kind": "result", "value": "allowed-once" } } }
-```
-
-   - 审批结果：`"allowed-once"` / `"rejected"`（也可 `"next"` 交给下一个应答者）
-   - 用户提问：`{ "kind": "result", "value": { "questions": [ ... 答案 ] } }`（结构见事件 payload 内的 schema）
-5. 先于手机作答的桌面端会赢（waterfall 先答先得）；App 收到后续事件自然对齐。
-
-## 5. 重连语义
-
-- 网络闪断：App 以指数退避（0.5s → 10s 封顶，带抖动）重连 WS；REST 直接重试。
-- `$events` 流断开即作废（`clientId` 失效），重连后重新 open 获取新 `clientId`。
-- 令牌被吊销：WS 升级被拒、REST 返回 401，App 应引导重新配对。
-
-## 6. 多主机管理（App 端客户端模型）
-
-协议本身无多主机概念——**每台 Mac 是一个独立服务器**，App 端维护一份服务器档案列表即可，互不干扰。推荐的客户端模型：
-
-```swift
-struct ServerProfile: Codable, Identifiable {
-    let id: UUID                 // 本地生成
-    var name: String             // 默认取 /v1/info 的 host.name，允许用户改名
-    var host: String             // IP 或主机名（不含 scheme）
-    var port: Int
-    var token: String            // deviceToken，存 Keychain 而非 UserDefaults
-    var deviceId: String         // 配对响应的 deviceId
-    var pairedAt: Date
-}
-```
-
-要点：
-
-- **添加**：扫码（深链 `dsh-remote://pair?host=&port=&code=`）或手输 `host:port` + 配对码 → `POST /v1/pair` → 落档案。配对响应里的 `host.name`（如 `MacBook-Pro-2.local`）作默认显示名。
-- **健康检查**：进入列表/切换时对各档案并发 `GET /v1/info`（超时 2–3s），绿灯=在线、红=不可达、401=令牌失效（提示重新配对）。
-- **连接策略**：同一时刻一个「当前主机」；切换档案即换 baseUrl + token 重建 WS。也可对多主机并行保活 WS（每档案一条连接，互不冲突——插件侧按设备令牌独立鉴权）。
-- **同一主机多设备**：每台 iPhone 各自配对，即各自持有独立 deviceToken（桌面配对页的「已配对设备」列表会显示全部）。App 换机/重装后重新配对一次即可，旧档案在桌面配对页吊销。
-- **删除档案**：纯本地操作（可选先吊销：桌面配对页管理；协议 v1 未提供手机端吊销其它设备的端点）。
-
-## 7. 错误码总表
-
-| code | 层 | 含义 |
-|---|---|---|
-| `auth/required` | 本插件 | 缺少/无效 Bearer 令牌 |
-| `pairing/invalid-code` | 本插件 | 配对码错误 |
-| `pairing/rate-limited` | 本插件 | 配对尝试锁定中 |
-| `pairing/bad-request` / `rpc/bad-request` / `admin/bad-request` | 本插件 | 请求体不合法 |
-| `remote/endpoint-forbidden` | 本插件 | 端点不在白名单 |
-| `gateway/arguments-invalid` | 网关 | 参数名/结构不匹配（含精确差异） |
-| `gateway/input-invalid` | 网关 | 参数值未通过边界校验 |
-| `gateway/signature-invalid` | 网关 | 用流端点调一元（或反之） |
-| `gateway/cancelled` | 网关 | 调用被取消 |
-| `gateway/service-unavailable` | 网关 | 目标服务未就绪 |
-| 其余 `gateway/*`、`session/*` | 业务 | 语义见 message/details |
+每个正式变更同时更新本文件、共享 fixtures、iOS 对应 DTO 和兼容矩阵。只添加新 metadata 字段应允许旧正式客户端忽略；官方业务破坏性变更按新的 DSH 兼容组合发布。
