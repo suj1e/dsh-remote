@@ -1,6 +1,6 @@
 {
   "name": "@suj1e/dsh-remote",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Mobile remote access for DeepSeek Harness: LAN HTTP+WebSocket bridge for a paired iOS client",
   "type": "module",
   "main": "./lib/index.js",
@@ -66,12 +66,14 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.1.7-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.5",

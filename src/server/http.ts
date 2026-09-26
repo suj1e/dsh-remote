@@ -10,7 +10,7 @@ import { PhoneSocket } from './ws.ts'
 import type { Config } from '../config.ts'
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
-const PLUGIN_VERSION = '0.1.9'
+const PLUGIN_VERSION = '0.1.10'
 const ENTRY_ID = 'dsh-remote'
 
 /**
@@ -46,6 +46,8 @@ export interface RemoteServerOptions {
   config: Config
   gateway: GatewayLike
   store: DeviceStore
+  /** Operator peer owned by the plugin fiber (see index.ts). */
+  peer: unknown
   log?: (message: string) => void
 }
 
@@ -221,7 +223,7 @@ export class RemoteServer {
     if (!endpointAllowed(this.options.config.allowedEndpoints, body.endpoint)) {
       return json(res, 403, { error: 'remote/endpoint-forbidden' })
     }
-    const result = await invokeRemote(this.options.gateway, body.endpoint, body.args as Record<string, unknown>, undefined)
+    const result = await invokeRemote(this.options.gateway, body.endpoint, body.args as Record<string, unknown>, this.options.peer)
     return json(res, 200, result)
   }
 
@@ -306,7 +308,7 @@ export class RemoteServer {
       const phone = PhoneSocket.attach(ws, {
         gateway: this.options.gateway,
         allowedEndpoints: this.options.config.allowedEndpoints,
-        peer: this.options.gateway.operatorPeer(),
+        peer: this.options.peer,
         hello: { ...this.info(), device: { id: device.id, name: device.name } },
         deviceId: device.id,
         log: this.options.log,

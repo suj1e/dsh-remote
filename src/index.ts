@@ -1,4 +1,5 @@
 import type { Context, Plugin } from '@deepseek-ai/cordis'
+import { OperatorPeer } from '@deepseek-ai/dsh-client-connection'
 import { Config, readVolatile, type Config as ConfigType } from './config.ts'
 import { DeviceStore } from './server/devices.ts'
 import { RemoteServer } from './server/http.ts'
@@ -26,13 +27,19 @@ function dshRemote(ctx: Context, config: ConfigType): void {
   store.load()
   const gateway = gatewayOf(ctx)
 
+  // A peer scope owned by THIS fiber: the Connection's operator scope goes
+  // inactive across client generations (page reloads), which made every
+  // gateway dispatch fail with "typert in inactive context". The gateway's
+  // own in-process carrier uses exactly this pattern.
+  const peer = new OperatorPeer(ctx)
+
   let server: RemoteServer | undefined
   let stopBridge: (() => void) | undefined
   let closing = false
 
   const start = (): void => {
     if (server || closing) return
-    const instance = new RemoteServer({ config, gateway, store, log })
+    const instance = new RemoteServer({ config, gateway, store, log, peer })
     server = instance
     stopBridge = startEventBridge(ctx, { sockets: instance.sockets, log })
     instance

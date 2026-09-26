@@ -67,7 +67,7 @@ async function startHarness(): Promise<Harness> {
     bind: '127.0.0.1',
     allowedEndpoints: ['session/*'],
   }
-  const server = new RemoteServer({ config, gateway, store })
+  const server = new RemoteServer({ config, gateway, store, peer: { sentinel: true } })
   const { port } = await server.listen()
   const url = `http://127.0.0.1:${port}`
 
@@ -107,7 +107,7 @@ test('server pairs, authenticates and proxies unary rpc', async () => {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${h.token}` },
       body: JSON.stringify({ endpoint: 'session/list', args: { x: 1 } }),
     }).then((r) => r.json())
-    assert.deepEqual(ok, { ok: true, value: { endpoint: 'session/list', args: { x: 1 }, signal: 'undefined', peer: 'undefined' } })
+    assert.deepEqual(ok, { ok: true, value: { endpoint: 'session/list', args: { x: 1 }, signal: 'undefined', peer: 'object' } })
 
     const failure = await fetch(`${h.url}/v1/rpc`, {
       method: 'POST',
