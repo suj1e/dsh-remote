@@ -1,6 +1,6 @@
 # dsh-remote 正式接入契约 v1
 
-更新：2026-09-26。状态：M0 已按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier 源码；插件构建和 16 项测试在 DSH Electron 主进程 Node 24.18.1 下通过，含官方 Connection + Fastify 合成 carrier probe。真实 Host round-trip 与 WebSocket adapter 仍待 M0 验证；合成 handler 不构成 Gateway/Host 兼容证据。当前仓库尚无正式服务实现，不能把示例当成在线接口已可用的声明。
+更新：2026-09-26。状态：按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier；构建与 17 项测试在 DSH Electron 主进程 Node 24.18.1 下通过。另以独立临时 DSH_HOME 实测 Fastify → 官方 shared FetchHandler → 实际 Gateway：workspace/session 创建、readBytes multipart 字节附件往返，以及 raw streaming upload route 返回成功。此为 macOS 本机、test-only adapter 的 carrier 证据，不代表正式插件已安装运行或 iOS 已联通；WebSocket mux、取消/背压/限额和 Windows/Linux 仍未验证。
 
 本文拥有设备接入契约；session、workspace、文件、审批等业务契约由固定版本官方 DSH Remote 拥有。[iOS 消费面与源码证据](../dsh-mobile/docs/PROTOCOL-BASELINE-1.0.0.md)记录所需业务接口，[插件计划](docs/PLAN-1.0.0.md)记录实现顺序，[兼容矩阵](docs/COMPATIBILITY.md)记录通过验证的组合。
 
@@ -73,10 +73,10 @@ HTTP 认证/限流/体积错误由接入层用 HTTP 状态表达；进入官方 
 - Gateway Host 提供 `ctx.typertGateway`；Connection Host 提供 `ctx.connection.createSharedFetchHandler('/api')`。后者分派 `/api` 下已注册的 Remote interceptor 与精确 Fetch route，并使用 DSH 自己的 JSON/附件响应编码。插件在 Fastify 外层先做手机 Bearer 鉴权和 endpoint allowlist，再将请求交给此 handler；不得自己调用业务 service、重建 `RemoteResult` 或 multipart serializer。
 - 一元请求使用官方 `client-request` envelope：`type/rpcId/method/payload`；path 中的 method 必须与 body 一致。成功和业务失败都是 `server-response` envelope，失败字段为官方 `code/message/details`。
 - 官方 Connection 的二进制响应为 `multipart/form-data`。`metadata` part 是带 `server-response` 的 JSON；顶层 `attachments` 项包含 result-value 相对 `path`、`codec:'bytes'`、part 名。原始 part 名为 `bytes-<index>`，接收端按 metadata 把 bytes 恢复到结果树；无附件与失败仍为 JSON。附件只用于 Remote 返回值，官方文档明确不支持二进制 stream/event。
-- `dsh-client-file-upload` 的 Host Fetch route 是 `POST /api/session/uploadFileBinary`，接受 `application/octet-stream`，以 `sessionId`（和可选 `name`）寻址，request body mode 为 streaming，并把 `Request.signal` 传给上传服务。必须通过官方 FetchHandler 路由，不转成字符串/JSON；真实 Host round-trip、取消与限额仍列为 M0 未完成项。
+- `dsh-client-file-upload` 的 Host Fetch route 是 `POST /api/session/uploadFileBinary`，接受 `application/octet-stream`，以 `sessionId`（和可选 `name`）寻址，request body mode 为 streaming，并把 `Request.signal` 传给上传服务。隔离实际 Host probe 已经通过官方 FetchHandler 发送原始字节并收到成功响应；取消传播、背压、限额、上传后业务读取及正式插件集成仍列为 M0 未完成项。
 - Gateway `stream-protocol` 使用 JSON text messages，mux path 是 `/api/remote.mux`；字节流不走 mux。公开 `TypertGatewayService.wireStream.open` 提供 Host in-process carrier，但 npm exports 未公开 `RemoteStreamMuxServer`。因此插件不得深导入内部 mux；仅可用 `@fastify/websocket` + 官方 `stream-protocol` parser + `wireStream` 写一个有界的 socket carrier adapter，并由 M0 实测 cancel/end/backpressure/peer 生命周期。这属于薄 transport bridge，不复制 session/event 业务逻辑；真实验证未通过前不可声称兼容。
 
-以上是本机安装包源码/README 确认，不等于 Fastify → shared FetchHandler → 实际 DSH Host 的端到端成功。兼容识别值和带状态 fixtures 见两个仓库同内容的 `contract/` 与 `test/fixtures/contract-v1/`。在 Host round-trip 通过之前，`/api` 的产品端到端兼容与附件能力仍不得标记通过。
+源码/README 结论与实际探测证据分开记录。`test/run-m0-host-probe.sh` 会为每次运行创建隔离 DSH_HOME，并只在其中动态加载 test-only Fastify 插件；`test/m0-host-roundtrip.mjs` 验证实际 Gateway 创建 workspace/session、multipart `readBytes` 中 `00 7f 80 ff` 的附件还原，以及官方 streaming upload route 的成功响应。该脚本不是生产插件，不触碰现有 DSH 用户 profile，也不验证手机到主机网络链路。兼容识别值和带状态 fixtures 见两个仓库同内容的 `contract/` 与 `test/fixtures/contract-v1/`。因此只可将上述具体操作标为本机 macOS Host carrier 部分通过，不能标为产品端到端、WS mux 或跨平台兼容通过。
 
 HTTP(S) baseURL 可含受支持代理前缀。由 URL 解析器拼接路径和切换 ws/wss，不能字符串硬拼。TLS 可在反向代理终止；传入代理头仅在显式配置可信代理时接受。客户端不忽略 TLS 错误，不向跨源 redirect 转交 token。
 
@@ -108,6 +108,6 @@ $events ready 的 clientId 属于该代连接，重连必须获取新值。只�
 
 ## 6. 冻结与变更
 
-M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、settings redacted schema 与成对 contract ID。当前 descriptor 名单和模式已从固定安装包读取；Host 调用、settings 字段与限额仍待验证。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
+M0 将本设计补成可执行契约：确定完整元数据 JSON schema、官方 carrier/framing、限额数值、精确方法参数、取消/错误样本、settings redacted schema 与成对 contract ID。当前 descriptor 名单和模式已从固定安装包读取；部分真实 Host unary/bytes/upload carrier 已由隔离 probe 验证，mux、取消/背压、settings 字段、限额、其余业务行为仍待验证。既不能在未验证时称“已支持”，也不能把未解决的文件/提问问题降为正式版已知限制。
 
 每个正式变更同时更新本文件、共享 fixtures、iOS 对应 DTO 和兼容矩阵。只添加新 metadata 字段应允许旧正式客户端忽略；官方业务破坏性变更按新的 DSH 兼容组合发布。
