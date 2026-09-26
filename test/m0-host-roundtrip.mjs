@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { parseRemoteStreamServerMessage } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 
 const home = process.env.DSH_HOME
 assert.ok(home && basename(home).startsWith('dsh-mobile-m0-host.'), 'set DSH_HOME to an isolated dsh-mobile-m0-host.* directory')
@@ -84,6 +85,86 @@ const streamResult = await stream.json()
 assert.equal(streamResult.firstItemType, 'ready', 'official $events ready frame')
 assert.equal(streamResult.cancellationSettled, true, 'official $events cancellation settles')
 
+const muxURL = new URL('/api/remote.mux', baseURL)
+muxURL.protocol = muxURL.protocol === 'https:' ? 'wss:' : 'ws:'
+const muxSocket = new WebSocket(muxURL)
+const queuedMessages = []
+let messageWaiter
+muxSocket.addEventListener('message', ({ data }) => {
+  if (!messageWaiter) {
+    queuedMessages.push(data)
+    return
+  }
+  const waiter = messageWaiter
+  messageWaiter = undefined
+  clearTimeout(waiter.timer)
+  waiter.resolve(data)
+})
+muxSocket.addEventListener('close', (event) => {
+  if (!messageWaiter) return
+  const waiter = messageWaiter
+  messageWaiter = undefined
+  clearTimeout(waiter.timer)
+  waiter.reject(new Error(`WebSocket closed before expected frame (${event.code}).`))
+})
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Timed out connecting to the isolated WebSocket mux.')), 5_000)
+  muxSocket.addEventListener('open', () => {
+    clearTimeout(timer)
+    resolve()
+  }, { once: true })
+  muxSocket.addEventListener('error', () => {
+    clearTimeout(timer)
+    reject(new Error('Could not connect to the isolated WebSocket mux.'))
+  }, { once: true })
+})
+
+function nextMuxMessage(timeoutMs = 5_000) {
+  if (queuedMessages.length > 0) return Promise.resolve(queuedMessages.shift())
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        if (messageWaiter === waiter) messageWaiter = undefined
+        resolve(undefined)
+      }, timeoutMs),
+    }
+    messageWaiter = waiter
+  })
+}
+
+async function openMuxEventStream(streamId) {
+  const expectedMessage = nextMuxMessage()
+  muxSocket.send(JSON.stringify({ ...streamOpen, streamId }))
+  const frame = parseRemoteStreamServerMessage(await expectedMessage)
+  assert.equal(frame.type, 'item')
+  assert.equal(frame.streamId, streamId)
+  assert.equal(frame.value?.type, 'ready')
+}
+
+async function waitForMuxStreamIds(expectedIds) {
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {
+    const state = await fetch(`${baseURL}/m0/mux/probe-state`).then((response) => response.json())
+    if ([...state.activeStreamIds].sort().join(',') === [...expectedIds].sort().join(',')) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  assert.fail(`WebSocket mux did not settle to active streams: ${expectedIds.join(',')}`)
+}
+
+await openMuxEventStream('m0-ws-events-1')
+await openMuxEventStream('m0-ws-events-2')
+muxSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-ws-events-1' }))
+await waitForMuxStreamIds(['m0-ws-events-2'])
+assert.equal(await nextMuxMessage(100), undefined, 'cancelling one logical stream emits no terminal frame or data to its sibling')
+muxSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-ws-events-2' }))
+await waitForMuxStreamIds([])
+await new Promise((resolve) => {
+  muxSocket.addEventListener('close', resolve, { once: true })
+  muxSocket.close(1000, 'M0 probe complete')
+})
+
 console.log(JSON.stringify({
   dshHomeIsolated: true,
   workspaceCreated: true,
@@ -92,4 +173,6 @@ console.log(JSON.stringify({
   uploadSucceeded: uploadResult.ok,
   eventStreamReady: streamResult.firstItemType === 'ready',
   eventStreamCancellationSettled: streamResult.cancellationSettled,
+  websocketMuxReady: true,
+  websocketLogicalStreamIsolation: true,
 }))

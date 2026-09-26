@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { parseRemoteStreamClientMessage } from '@deepseek-ai/dsh-api-gateway/stream-protocol'
 import Fastify from 'fastify'
+import websocket from '@fastify/websocket'
 
 export const inject = ['connection', 'typertGateway']
 
@@ -19,6 +20,81 @@ export function apply(ctx) {
 
     const fetchHandler = ctx.connection.createSharedFetchHandler('/api')
     const app = Fastify({ logger: false })
+    await app.register(websocket, { options: { maxPayload: 16 * 1024 } })
+
+    const activeMuxStreams = new Set()
+    const sendFrame = (socket, frame) => new Promise((resolve, reject) => {
+      if (socket.readyState !== 1) return reject(new Error('M0 probe WebSocket is not open.'))
+      socket.send(JSON.stringify(frame), (error) => error ? reject(error) : resolve())
+    })
+
+    const pumpMuxStream = async (socket, message, active) => {
+      try {
+        const source = await ctx.typertGateway.wireStream.open(
+          message.endpoint,
+          message.payload,
+          { async *[Symbol.asyncIterator]() {} },
+          undefined,
+          active.abort.signal,
+        )
+        for await (const value of source) {
+          await sendFrame(socket, { type: 'item', streamId: message.streamId, value })
+        }
+        if (!active.abort.signal.aborted) {
+          await sendFrame(socket, { type: 'end', streamId: message.streamId })
+        }
+      } catch (error) {
+        if (!active.abort.signal.aborted && socket.readyState === 1) {
+          await sendFrame(socket, {
+            type: 'error',
+            streamId: message.streamId,
+            error: ctx.typertGateway.wireStream.failure(error),
+          }).catch(() => {})
+        }
+      } finally {
+        active.connectionStreams.delete(message.streamId)
+        activeMuxStreams.delete(active)
+      }
+    }
+
+    app.get('/api/remote.mux', { websocket: true }, (socket) => {
+      const connectionStreams = new Map()
+      socket.on('message', (data, isBinary) => {
+        if (isBinary) {
+          socket.close(1003, 'text messages required')
+          return
+        }
+
+        let message
+        try {
+          message = parseRemoteStreamClientMessage(data.toString())
+        } catch {
+          socket.close(1008, 'invalid Remote stream request')
+          return
+        }
+
+        if (message.type === 'cancel') {
+          connectionStreams.get(message.streamId)?.abort.abort(new Error('Remote stream cancelled'))
+          return
+        }
+        if (message.type !== 'open' || message.endpoint !== '$events' || connectionStreams.has(message.streamId)) {
+          socket.close(1008, 'M0 probe only accepts unique $events open frames and cancel frames')
+          return
+        }
+
+        const active = { abort: new AbortController(), connectionStreams, streamId: message.streamId }
+        connectionStreams.set(message.streamId, active)
+        activeMuxStreams.add(active)
+        void pumpMuxStream(socket, message, active)
+      })
+      socket.on('close', () => {
+        for (const active of connectionStreams.values()) active.abort.abort(new Error('Remote stream socket closed'))
+      })
+    })
+
+    app.get('/m0/mux/probe-state', async () => ({
+      activeStreamIds: [...activeMuxStreams].map(({ streamId }) => streamId),
+    }))
 
     const forwardJSON = async (request, reply) => {
       const url = new URL(request.url, 'http://dsh-m0.invalid')
