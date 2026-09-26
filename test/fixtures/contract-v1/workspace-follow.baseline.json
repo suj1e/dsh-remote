@@ -1,0 +1,17 @@
+{
+  "type": "baseline",
+  "value": {
+    "items": [
+      {
+        "workspaceId": "workspace-fixture-1",
+        "path": "/work/ios-client",
+        "title": "iOS client",
+        "sessionIds": ["session-fixture-1"],
+        "createdAt": "2026-09-26T08:00:00.000Z",
+        "updatedAt": "2026-09-26T08:15:00.000Z"
+      }
+    ],
+    "archivedSessionIds": ["session-fixture-archived"],
+    "pinnedSessionIds": ["session-fixture-1"]
+  }
+}

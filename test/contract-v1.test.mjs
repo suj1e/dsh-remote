@@ -21,8 +21,9 @@ test('contract fixture pins the installed DSH source baseline and bounded real-H
   assert.equal(baseline.dsh.appAsarSha256, 'afb3958a1a10e1abb2f48083ffec0d270eddec668a393c59e20db4f56ade6fde')
   assert.equal(baseline.sourceEvidence.hostRoundTrip, 'isolated-production-plugin-carrier-on-macos')
   assert.deepEqual(baseline.hostRoundTripEvidence.testedEndpoints, [
-    'workspace/create', 'session/create', 'workspaceFiles/readBytes',
+    'workspace/create', 'session/create', 'workspace/rename', 'workspace/follow', 'workspaceFiles/readBytes',
   ])
+  assert.deepEqual(baseline.hostRoundTripEvidence.testedStreams, ['$events', 'workspace/follow'])
   assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no Windows/Linux Host'))
 })
 
@@ -98,6 +99,33 @@ test('session list fixture preserves the official cold-safe summary fields', asy
       values: { title: 'Fixture session' },
     },
   })
+})
+
+test('workspace follow fixtures pin the official baseline and every ordered increment', async () => {
+  const open = await fixture('stream-open.workspace-follow.json')
+  const baseline = await fixture('workspace-follow.baseline.json')
+  const upsert = await fixture('workspace-follow.upsert.json')
+  const remove = await fixture('workspace-follow.remove.json')
+  const order = await fixture('workspace-follow.order.json')
+  const archived = await fixture('workspace-follow.archived.json')
+  const pinned = await fixture('workspace-follow.pinned.json')
+
+  assert.deepEqual(open, {
+    type: 'open',
+    streamId: 'fixture-workspace-follow-001',
+    endpoint: 'workspace/follow',
+    payload: { args: {} },
+  })
+  assert.equal(baseline.type, 'baseline')
+  assert.deepEqual(Object.keys(baseline.value).sort(), ['archivedSessionIds', 'items', 'pinnedSessionIds'])
+  assert.deepEqual(Object.keys(baseline.value.items[0]).sort(), [
+    'createdAt', 'path', 'sessionIds', 'title', 'updatedAt', 'workspaceId',
+  ])
+  assert.equal(upsert.type, 'upsert')
+  assert.equal(remove.type, 'remove')
+  assert.equal(order.type, 'order')
+  assert.equal(archived.type, 'archived')
+  assert.equal(pinned.type, 'pinned')
 })
 
 test('business failures retain the official server-response result shape', async () => {

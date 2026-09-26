@@ -4,4 +4,6 @@ These are synthetic, redacted wire-shape fixtures: DSH Connection examples are s
 
 The binary cases store an edge-case byte vector as hex beside the official Connection metadata shape or raw-upload request; they are not hand-authored multipart bodies with fake boundaries. The production plugin carrier has passed an isolated macOS DSH Host round-trip for pairing/info, workspace/session creation, multipart `readBytes`, raw upload, and two `$events` streams with isolated cancellation. That evidence is documented separately and does not imply iOS device, Windows, Linux, approval waterfall, or load compatibility. No user prompt, host path, or real session data is present here.
 
+`stream-open.workspace-follow.json` and `workspace-follow.*.json` pin the official workspace-follow open payload, complete baseline, and each ordered increment shape. These fixtures are shared byte-for-byte with the iOS repository; isolated production-carrier baseline/upsert evidence is tracked separately from these synthetic samples.
+
 Run the fixture-shape checks with `node --test test/contract-v1.test.mjs`. These tests validate only the committed examples; run `test/run-m0-host-probe.sh` for the isolated real-Host checks.

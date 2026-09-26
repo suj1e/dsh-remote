@@ -198,6 +198,27 @@ async function openRemoteEvents(streamId) {
   assert.equal(frame.streamId, streamId)
   assert.equal(frame.value?.type, 'ready')
 }
+const workspaceFollowOpen = JSON.parse(await readFile(new URL('./fixtures/contract-v1/stream-open.workspace-follow.json', import.meta.url), 'utf8'))
+const workspaceBaselineWait = nextRemoteFrame()
+remoteSocket.send(JSON.stringify({ ...workspaceFollowOpen, streamId: 'm0-product-workspace-follow' }))
+const workspaceBaselineFrame = await workspaceBaselineWait
+assert.equal(workspaceBaselineFrame.type, 'item')
+assert.equal(workspaceBaselineFrame.streamId, 'm0-product-workspace-follow')
+assert.equal(workspaceBaselineFrame.value?.type, 'baseline')
+assert.ok(workspaceBaselineFrame.value.value.items.some((item) => item.workspaceId === workspace.value.workspace.workspaceId))
+assert.ok(workspaceBaselineFrame.value.value.items.find((item) => item.workspaceId === workspace.value.workspace.workspaceId).sessionIds.includes(session.value.sessionId))
+
+const renamedWorkspaceWait = nextRemoteFrame()
+await remoteRpc('workspace/rename', {
+  request: { workspaceId: workspace.value.workspace.workspaceId, title: 'M0 renamed workspace' },
+})
+const renamedWorkspaceFrame = await renamedWorkspaceWait
+assert.equal(renamedWorkspaceFrame.type, 'item')
+assert.equal(renamedWorkspaceFrame.streamId, 'm0-product-workspace-follow')
+assert.equal(renamedWorkspaceFrame.value?.type, 'upsert')
+assert.equal(renamedWorkspaceFrame.value.workspace.title, 'M0 renamed workspace')
+remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-workspace-follow' }))
+
 await openRemoteEvents('m0-product-events-1')
 await openRemoteEvents('m0-product-events-2')
 remoteSocket.send(JSON.stringify({ type: 'cancel', streamId: 'm0-product-events-1' }))
@@ -314,6 +335,7 @@ console.log(JSON.stringify({
   eventStreamReady: streamResult.firstItemType === 'ready',
   eventStreamCancellationSettled: streamResult.cancellationSettled,
   productionPairingAndInfo: true,
+  productionWorkspaceFollowBaselineAndUpsert: true,
   productionReadBytesHex: Buffer.from(remoteRead.byteParts.get('bytes-0')).toString('hex'),
   productionStreamingUploadSucceeded: true,
   productionWebSocketMuxReady: true,

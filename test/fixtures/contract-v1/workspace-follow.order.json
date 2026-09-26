@@ -1,0 +1,4 @@
+{
+  "type": "order",
+  "workspaceIds": ["workspace-fixture-2", "workspace-fixture-1"]
+}

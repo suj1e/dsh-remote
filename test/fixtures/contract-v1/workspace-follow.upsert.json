@@ -1,0 +1,11 @@
+{
+  "type": "upsert",
+  "workspace": {
+    "workspaceId": "workspace-fixture-2",
+    "path": "C:\\work\\client-shell",
+    "title": "Client shell",
+    "sessionIds": [],
+    "createdAt": "2026-09-26T08:00:00.000Z",
+    "updatedAt": "2026-09-26T08:20:00.000Z"
+  }
+}

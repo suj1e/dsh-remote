@@ -1,0 +1,8 @@
+{
+  "type": "open",
+  "streamId": "fixture-workspace-follow-001",
+  "endpoint": "workspace/follow",
+  "payload": {
+    "args": {}
+  }
+}
