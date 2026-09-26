@@ -1,6 +1,6 @@
 # dsh-remote 正式接入契约 v1
 
-更新：2026-09-26。状态：M0 已按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier 源码；插件构建和 15 项测试在 DSH Electron 主进程 Node 24.18.1 下通过。真实 Host round-trip 与 WebSocket adapter 仍待 M0 验证。当前仓库尚无正式服务实现，不能把示例当成在线接口已可用的声明。
+更新：2026-09-26。状态：M0 已按本机 DSH 0.1.7-rc.2 安装包核对官方 HTTP/stream/bytes carrier 源码；插件构建和 16 项测试在 DSH Electron 主进程 Node 24.18.1 下通过，含官方 Connection + Fastify 合成 carrier probe。真实 Host round-trip 与 WebSocket adapter 仍待 M0 验证；合成 handler 不构成 Gateway/Host 兼容证据。当前仓库尚无正式服务实现，不能把示例当成在线接口已可用的声明。
 
 本文拥有设备接入契约；session、workspace、文件、审批等业务契约由固定版本官方 DSH Remote 拥有。[iOS 消费面与源码证据](../dsh-mobile/docs/PROTOCOL-BASELINE-1.0.0.md)记录所需业务接口，[插件计划](docs/PLAN-1.0.0.md)记录实现顺序，[兼容矩阵](docs/COMPATIBILITY.md)记录通过验证的组合。
 
