@@ -37,16 +37,19 @@
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
-    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2"
+    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
     "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
     "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@types/node": "24.19.0",
     "@types/qrcode": "1.5.6",
     "@types/ws": "8.18.1",
+    "ws": "8.21.3",
     "typescript": "6.0.3"
   }
 }

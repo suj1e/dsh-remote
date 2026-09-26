@@ -14,12 +14,16 @@ async function contract() {
   return JSON.parse(await readFile(new URL('../contract/contract-v1.json', import.meta.url), 'utf8'))
 }
 
-test('contract fixture pins the installed DSH source baseline without claiming a Host pass', async () => {
+test('contract fixture pins the installed DSH source baseline and bounded real-Host evidence', async () => {
   const baseline = await contract()
 
   assert.equal(baseline.contractId, 'dshr-v1-dsh-0.1.7-rc.2-2026-09-26')
   assert.equal(baseline.dsh.appAsarSha256, 'afb3958a1a10e1abb2f48083ffec0d270eddec668a393c59e20db4f56ade6fde')
-  assert.equal(baseline.sourceEvidence.hostRoundTrip, 'not-run')
+  assert.equal(baseline.sourceEvidence.hostRoundTrip, 'isolated-production-plugin-carrier-on-macos')
+  assert.deepEqual(baseline.hostRoundTripEvidence.testedEndpoints, [
+    'workspace/create', 'session/create', 'workspaceFiles/readBytes',
+  ])
+  assert.ok(baseline.hostRoundTripEvidence.limitations.includes('no Windows/Linux Host'))
 })
 
 test('planned endpoint policy is exact, least-privilege, and guards generic mutation APIs', async () => {
@@ -45,6 +49,25 @@ test('planned endpoint policy is exact, least-privilege, and guards generic muta
   assert.equal(policy.notExposed.includes('account/*'), true)
   assert.equal(policy.notExposed.includes('settings/update'), true)
   assert.deepEqual(policy.eventAllowlist, ['approval/request', 'user-questions/request'])
+})
+
+test('device pairing fixtures pin access metadata shape and keep the token pair-only', async () => {
+  const baseline = await contract()
+  const request = await fixture('pair-request.json')
+  const paired = await fixture('pair-response.json')
+  const info = await fixture('info-response.json')
+
+  assert.equal(baseline.deviceAccess.accessVersion, 1)
+  assert.equal(baseline.deviceAccess.pairing.path, '/v1/pair')
+  assert.equal(baseline.deviceAccess.info.path, '/v1/info')
+  assert.equal(request.code.length, 10)
+  assert.deepEqual(Object.keys(paired).sort(), baseline.deviceAccess.pairing.successFields.slice().sort())
+  assert.deepEqual(Object.keys(info).sort(), baseline.deviceAccess.info.successFields.slice().sort())
+  assert.match(paired.deviceToken, /^[A-Za-z0-9_-]{43}$/)
+  assert.equal('deviceToken' in info, false)
+  assert.equal(paired.host.instanceId, info.host.instanceId)
+  assert.equal(paired.device.id, info.device.id)
+  assert.equal(paired.contractId, baseline.contractId)
 })
 
 test('unary fixture preserves the official Connection request envelope and endpoint', async () => {

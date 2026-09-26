@@ -1,0 +1,37 @@
+{
+  "accessVersion": 1,
+  "contractId": "dshr-v1-dsh-0.1.7-rc.2-2026-09-26",
+  "plugin": { "name": "dsh-remote", "version": "1.0.0-m1.0" },
+  "dsh": { "version": "0.1.7-rc.2" },
+  "host": {
+    "instanceId": "24f5a15d-f24a-4a9f-9083-4f0952d53be8",
+    "name": "mac-studio",
+    "platform": "darwin"
+  },
+  "endpoints": {
+    "unary": ["session/list", "workspace/create", "workspaceFiles/readBytes"],
+    "streams": ["$events", "session/follow"],
+    "fetchRoutes": [
+      {
+        "method": "POST",
+        "path": "/api/session/uploadFileBinary",
+        "contentType": "application/octet-stream"
+      }
+    ]
+  },
+  "transports": { "http": true, "websocket": true, "streamingUpload": true },
+  "limits": {
+    "jsonRequestBytes": 1048576,
+    "uploadBytes": 314572800,
+    "websocketFrameBytes": 262144,
+    "websocketConnections": 8,
+    "streamsPerSocket": 16,
+    "socketBufferedBytes": 2097152
+  },
+  "server": { "addresses": ["https://mac-studio.example.test"] },
+  "device": {
+    "id": "3f75aa30-d998-427c-9a08-bd4d97b8489e",
+    "name": "iPhone 17 Pro",
+    "createdAt": "2026-09-26T09:00:00.000Z"
+  }
+}

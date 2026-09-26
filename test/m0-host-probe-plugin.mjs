@@ -5,7 +5,7 @@ import { parseRemoteStreamClientMessage } from '@deepseek-ai/dsh-api-gateway/str
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 
-export const inject = ['connection', 'typertGateway']
+export const inject = ['connection', 'typertGateway', 'dshRemoteControl']
 
 export function apply(ctx) {
   ctx.effect(async () => {
@@ -190,8 +190,10 @@ export function apply(ctx) {
 
     const address = await app.listen({ host: '127.0.0.1', port: 0 })
     const port = new URL(address).port
+    const pairing = ctx.dshRemoteControl.openPairingWindow()
+    const remoteAddress = ctx.dshRemoteControl.listenAddress
     await mkdir(home, { recursive: true })
-    await writeFile(join(home, 'm0-host-probe.json'), JSON.stringify({ port }), { mode: 0o600 })
+    await writeFile(join(home, 'm0-host-probe.json'), JSON.stringify({ port, remoteAddress, pairingCode: pairing.code }), { mode: 0o600 })
     ctx.logger('m0-host-probe').info('Isolated M0 Host probe is ready.')
 
     return async () => {

@@ -1,6 +1,6 @@
 {
   "contractId": "dshr-v1-dsh-0.1.7-rc.2-2026-09-26",
-  "status": "installed-source-verified-host-roundtrip-pending",
+  "status": "installed-source-and-isolated-product-carrier-host-roundtrip-verified-macos",
   "dsh": {
     "version": "0.1.7-rc.2",
     "build": "0.1.7-rc.2",
@@ -34,6 +34,42 @@
     "@deepseek-ai/dsh-experimental-api-speech-to-text": "0.1.7-rc.2",
     "@deepseek-ai/dsh-office-to-pdf": "0.1.7-rc.2",
     "@deepseek-ai/dsh-message-feedback": "0.1.7-rc.2"
+  },
+  "deviceAccess": {
+    "accessVersion": 1,
+    "pairing": {
+      "method": "POST",
+      "path": "/v1/pair",
+      "request": { "code": "10-digit temporary pairing code", "deviceName": "1–64 printable characters" },
+      "successStatus": 201,
+      "successFields": ["accessVersion", "contractId", "plugin", "dsh", "host", "endpoints", "transports", "limits", "server", "device", "deviceToken"],
+      "errors": { "invalid-request": 400, "invalid-device-name": 400, "closed": 503, "expired": 410, "invalid-code": 401, "locked": 429, "rate-limited": 429 },
+      "rateLimit": { "maxAttempts": 10, "windowSeconds": 60, "retryAfterSeconds": 60 }
+    },
+    "info": {
+      "method": "GET",
+      "path": "/v1/info",
+      "authorization": "Bearer deviceToken",
+      "successStatus": 200,
+      "successFields": ["accessVersion", "contractId", "plugin", "dsh", "host", "endpoints", "transports", "limits", "server", "device"]
+    },
+    "device": {
+      "requiredFields": ["id", "name", "createdAt"],
+      "optionalFields": ["revokedAt"],
+      "id": "lowercase UUID v4",
+      "nameMaxLength": 64
+    },
+    "deviceToken": { "encoding": "base64url", "randomBytes": 32, "length": 43, "storage": "iOS Keychain; Host stores SHA-256 digest only" },
+    "metadata": {
+      "plugin": ["name", "version"],
+      "dsh": ["version"],
+      "host": ["instanceId", "name", "platform"],
+      "endpoints": ["unary", "streams", "fetchRoutes"],
+      "transports": ["http", "websocket", "streamingUpload"],
+      "limits": ["jsonRequestBytes", "uploadBytes", "websocketFrameBytes", "websocketConnections", "streamsPerSocket", "socketBufferedBytes"],
+      "server": ["addresses"]
+    },
+    "fixtures": ["pair-request.json", "pair-response.json", "info-response.json"]
   },
   "connection": {
     "unary": {
@@ -73,14 +109,14 @@
       "cancellation": "Request.signal",
       "routePath": "/api/session/uploadFileBinary",
       "response": "application/json RemoteResult",
-      "routePathStatus": "installed-source-verified-host-roundtrip-pending"
+      "routePathStatus": "installed-source-and-isolated-product-carrier-host-roundtrip-verified-macos"
     }
   },
   "sourceEvidence": {
     "kind": "read-only inspection of the installed desktop app.asar",
     "capturedAt": "2026-09-26",
-    "hostRoundTrip": "not-run",
-    "webSocketAdapter": "not-run",
+    "hostRoundTrip": "isolated-production-plugin-carrier-on-macos",
+    "webSocketAdapter": "production-carrier-and-real-gateway-events-on-macos",
     "sourcePaths": [
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/README.md",
       "dsh/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/stream-protocol.js",
@@ -198,5 +234,14 @@
       "session/workspacePathApplications"
     ]
   },
-  "endpointInventoryStatus": "remote descriptor inventory source-verified; planned exact allowlist recorded; settings-field guard and actual Host calls remain pending"
+  "endpointInventoryStatus": "remote descriptor inventory source-verified; selected workspace/session/readBytes calls host-roundtrip verified; remaining allowlist calls and settings-field guard pending",
+  "hostRoundTripEvidence": {
+    "status": "isolated-production-plugin-carrier-verified-on-macos-only",
+    "dshVersion": "0.1.7-rc.2",
+    "testedEndpoints": ["workspace/create", "session/create", "workspaceFiles/readBytes"],
+    "testedFetchRoutes": ["POST /api/session/uploadFileBinary"],
+    "testedStreams": ["$events"],
+    "additionalChecks": ["pairing-and-device-bearer-auth", "real-host-package-version-discovery", "dual-logical-stream-cancellation-isolation"],
+    "limitations": ["no iOS-device link", "no Windows/Linux Host", "no approval/user-question waterfall", "no uploaded-file read-back", "no external-proxy/TLS deployment", "no load/backpressure qualification"]
+  }
 }
