@@ -75,8 +75,8 @@ Host 对参数做严格校验，错误信息会精确指出缺失/多余字段�
 | `session/list` | `{"_request": {}}` | 会话列表（含运行状态、标题、cwd、token 用量等投影） |
 | `session/page` | `{"request": {"sessionId": "..."}}` | 翻页读取会话事件 |
 | `session/follow` | `{"request": {"address": {"kind": "session", "sessionId": "..."}}}` | （流）实时跟随会话 |
-| `session/prompt` | `{"request": {"sessionId": "...", "requestId": "<幂等id>", "content": [{"type": "text", "text": "你好"}]}}` | 发送消息 |
-| `session/cancel` | `{"request": {"sessionId": "..."}}` | 取消当前运行 |
+| `session/prompt` | `{"request": {"sessionId": "...", "requestId": "<幂等id>", "mode": "queue"\|"steer", "content": [{"type": "text", "text": "你好"}], "clientTimeZone": "Asia/Shanghai"(可选)}}` | 发送消息（✓实测：返回 `{"accepted":true}`） |
+| `session/cancel` | `{"request": {"sessionId": "..."}}` | 取消当前运行（✓实测：返回 `{"accepted":true}`） |
 | `$events` | （流，payload 必须为 `{"args": {}}`） | 订阅转发的主机事件（含审批） |
 | `$events/result` | `{"clientId": "...", "eventId": "...", "outcome": {"kind": "result", "value": "allowed-once"}}` | 应答 waterfall 事件（审批/提问） |
 
@@ -131,7 +131,19 @@ Upgrade 请求带 `Authorization: Bearer <token>`，未认证直接被拒（无�
 
 1. 首帧 `item` 是完整快照：`{type:"snapshot", header:{...}, ...}`
 2. 之后是增量 `{type:"event", event:{...}}` 帧（消息、工具调用、助手流片段等）
-3. 断线重连后重新 open 同一 `session/follow`，以最新快照恢复（`session/follow` 的请求可带游标参数收敛重复量）
+3. 断线重连后重新 open 同一 `session/follow`，以最新快照恢复
+
+**帧结构（✓实测）**：首帧 `{type:"snapshot", header:{version,id,createdAt,cwd,isSeeded,delegationDepth,agentPreset}, cursor, records:[], hasMore, projections}`；之后每条 `{type:"event", event:{type, seq, time, data, surfaceOp?}}`。事件类型实测样本：
+
+| event.type | data 要点 |
+|---|---|
+| `turn/start` / `turn/end` | `{turn}` / `{turn, reason:{kind:"completed"\|...}}` — 轮次边界，驱动运行状态 |
+| `step/start` / `step/end` | `{turn, step}` — 步骤边界 |
+| `user/message` | `{content:[{type:"text",text}], source:{kind:"user",rpcId}, role:"user", id}`（surfaceOp:"append"） |
+| `assistant/message` | `{turn, step, message:{role:"assistant", content:[{type:"reasoning",text}\|{type:"text",text}], source:{kind:"model",provider,model}}}` |
+| `request/header` | `{header:{config:{provider,model,reasoningEffort}, tools:[...]}}` — 本轮请求元数据 |
+| `agent/inbox/spliced` | 收件箱拼接（inserted/removedCount），UI 可忽略 |
+| `tool/*` 等 | 工具调用族（本样本未覆盖，按未知类型降级渲染） |
 
 ### 4.4 审批与用户提问（waterfall 事件）
 
